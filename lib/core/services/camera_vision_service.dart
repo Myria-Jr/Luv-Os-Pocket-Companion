@@ -289,12 +289,18 @@ class CameraVisionService {
 }
 
 /// Cute-Core Heart-Shaped Live Front-Camera Mirror HUD widget.
+/// Supports Stealth-Mode: the camera stream & periodic Gemini vision stay 100%
+/// active even when the Heart Mirror visual preview is hidden!
 class HeartCameraMirrorHud extends ConsumerStatefulWidget {
   final VoidCallback onTapMirror;
+  final bool stealthHidden;
+  final VoidCallback? onToggleStealth;
 
   const HeartCameraMirrorHud({
     super.key,
     required this.onTapMirror,
+    this.stealthHidden = false,
+    this.onToggleStealth,
   });
 
   @override
@@ -322,15 +328,75 @@ class _HeartCameraMirrorHudState extends ConsumerState<HeartCameraMirrorHud> {
         final data = snap.data ?? camService.current;
         final ctrl = camService.controller;
 
-        return GestureDetector(
-          onTap: widget.onTapMirror,
-          child: Column(
+        // When stealthHidden is true, keep the camera active in an Offstage
+        // preview while showing only a tiny, unobtrusive stealth pill!
+        if (widget.stealthHidden) {
+          return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Container(
-                width: 86,
-                height: 82,
+              Offstage(
+                offstage: true,
+                child: SizedBox(
+                  width: 1,
+                  height: 1,
+                  child: (data.isInitialized &&
+                          ctrl != null &&
+                          ctrl.value.isInitialized)
+                      ? CameraPreview(ctrl)
+                      : const SizedBox.shrink(),
+                ),
+              ),
+              GestureDetector(
+                onTap: widget.onToggleStealth,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xCC1A0410),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: CuteHorrorPalette.hotPink.withAlphaFactor(0.75),
+                      width: 1.1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00E676),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'Cam aktiv (Ausgeblendet) 👁️',
+                        style: TextStyle(
+                          color: CuteHorrorPalette.pastelPink,
+                          fontSize: 9.0,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            GestureDetector(
+              onTap: widget.onTapMirror,
+              child: Container(
+                width: 88,
+                height: 84,
                 decoration: BoxDecoration(
                   boxShadow: [
                     BoxShadow(
@@ -391,9 +457,12 @@ class _HeartCameraMirrorHudState extends ConsumerState<HeartCameraMirrorHud> {
                   ),
                 ),
               ),
-              const SizedBox(height: 3),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            ),
+            const SizedBox(height: 3),
+            GestureDetector(
+              onTap: widget.onToggleStealth,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.black87,
                   borderRadius: BorderRadius.circular(8),
@@ -402,17 +471,28 @@ class _HeartCameraMirrorHudState extends ConsumerState<HeartCameraMirrorHud> {
                     width: 1,
                   ),
                 ),
-                child: const Text(
-                  'Herz-Spiegel 📸',
-                  style: TextStyle(
-                    color: CuteHorrorPalette.pastelPink,
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.visibility_off_rounded,
+                      size: 10,
+                      color: CuteHorrorPalette.pastelPink,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'Ausblenden (Cam bleibt an)',
+                      style: TextStyle(
+                        color: CuteHorrorPalette.pastelPink,
+                        fontSize: 8.2,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );

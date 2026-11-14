@@ -390,6 +390,17 @@ class _MimiCompanionAvatarState extends ConsumerState<MimiCompanionAvatar>
           )
         : Offset.zero;
 
+    final depth3d = state.wardrobe.depth3dIntensity;
+    final rotY = (effectiveLook.dx * 0.22 * depth3d).clamp(-0.32, 0.32);
+    final rotX = (-effectiveLook.dy * 0.16 * depth3d).clamp(-0.24, 0.24);
+    final scale3d = state.wardrobe.avatarScale;
+
+    final perspectiveMatrix = Matrix4.identity()
+      ..setEntry(3, 2, 0.0019)
+      ..rotateX(rotX)
+      ..rotateY(rotY)
+      ..scale(scale3d, scale3d, 1.0);
+
     return SizedBox(
       width: widget.size,
       height: widget.size,
@@ -404,29 +415,33 @@ class _MimiCompanionAvatarState extends ConsumerState<MimiCompanionAvatar>
             onPanEnd: _handlePanEnd,
             child: Transform.translate(
               offset: shakeOffset,
-              child: CustomPaint(
-                size: Size(widget.size, widget.size),
-                painter: MimiAvatarPainter(
-                  time: _time,
-                  corruption: corruption,
-                  obsession: obsession,
-                  mania: state.emotion.mania,
-                  phase: state.phase,
-                  lookOffset: effectiveLook,
-                  hairSpringOffset: _hairSpring.position,
-                  earSpringOffset: _earSpring.position,
-                  activeVowel: _activeVowel,
-                  lipSyncOpenness: _lipSyncOpenness,
-                  lipSyncWidth: _lipSyncWidth,
-                  blinkProgress: _blinkProgress,
-                  blushBoost: _headpatBlushBoost,
-                  annoyedIntensity: _annoyedShakeIntensity,
-                  burstParticles: _burstParticles,
-                  wardrobe: state.wardrobe,
-                  facialExpression: state.facialExpression,
-                  angerScore: state.angerScore,
-                  neglectScore: state.neglectScore,
-                  voiceComplimentSparkle: state.voiceComplimentSparkle,
+              child: Transform(
+                alignment: Alignment.center,
+                transform: perspectiveMatrix,
+                child: CustomPaint(
+                  size: Size(widget.size, widget.size),
+                  painter: MimiAvatarPainter(
+                    time: _time,
+                    corruption: corruption,
+                    obsession: obsession,
+                    mania: state.emotion.mania,
+                    phase: state.phase,
+                    lookOffset: effectiveLook,
+                    hairSpringOffset: _hairSpring.position,
+                    earSpringOffset: _earSpring.position,
+                    activeVowel: _activeVowel,
+                    lipSyncOpenness: _lipSyncOpenness,
+                    lipSyncWidth: _lipSyncWidth,
+                    blinkProgress: _blinkProgress,
+                    blushBoost: _headpatBlushBoost,
+                    annoyedIntensity: _annoyedShakeIntensity,
+                    burstParticles: _burstParticles,
+                    wardrobe: state.wardrobe,
+                    facialExpression: state.facialExpression,
+                    angerScore: state.angerScore,
+                    neglectScore: state.neglectScore,
+                    voiceComplimentSparkle: state.voiceComplimentSparkle,
+                  ),
                 ),
               ),
             ),
@@ -537,46 +552,66 @@ class MimiAvatarPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    final center = Offset(size.width * 0.5, size.height * 0.52);
+    final center = Offset(size.width * 0.5, size.height * 0.49);
     final radius = size.shortestSide * 0.34;
     final breathY = math.sin(time * (2.4 + corruption * 2.5)) * (radius * 0.028);
     final headCenter = center.translate(0, breathY);
 
-    // 1. Background glowing aura & ambient phase particles
-    _paintAuraAndAmbientParticles(canvas, size, headCenter, radius);
+    // True 2.5D / 3D Multi-Plane Parallax Offsets
+    final d3d = wardrobe.depth3dIntensity;
+    final parallaxBack = Offset(
+      -lookOffset.dx * radius * 0.13 * d3d,
+      -lookOffset.dy * radius * 0.09 * d3d,
+    );
+    final parallaxBody = Offset(
+      lookOffset.dx * radius * 0.04 * d3d,
+      lookOffset.dy * radius * 0.03 * d3d,
+    );
+    final parallaxFace = Offset(
+      lookOffset.dx * radius * 0.09 * d3d,
+      lookOffset.dy * radius * 0.07 * d3d,
+    );
+    final parallaxFront = Offset(
+      lookOffset.dx * radius * 0.15 * d3d,
+      lookOffset.dy * radius * 0.11 * d3d,
+    );
 
-    // 2. Neck, sculpted collarbone & equipped wardrobe collar/outfit (stays un-tilted)
-    _paintNeckAndCollar(canvas, headCenter, radius);
+    // 1. Background 3D Hologram Pedestal, glowing aura & ambient phase particles
+    _paintAuraAndAmbientParticles(canvas, size, headCenter + parallaxBack * 0.6, radius);
 
-    // 3. Apply headTilt rotation around the neck pivot for Anime Head 3.0
+    // 2. Volumetric 3D Neck, sculpted collarbone, upper bust/arms & outfit
+    _paintNeckAndCollar(canvas, headCenter + parallaxBody, radius);
+
+    // 3. Apply headTilt rotation around the neck pivot for 3D Anime Model
     canvas.save();
     final tiltPivot = headCenter.translate(0, radius * 0.65);
     canvas.translate(tiltPivot.dx, tiltPivot.dy);
-    canvas.rotate(facialExpression.headTilt * 0.55);
+    canvas.rotate(facialExpression.headTilt * 0.55 + lookOffset.dx * 0.06 * d3d);
     canvas.translate(-tiltPivot.dx, -tiltPivot.dy);
 
-    // 4. Back hair & flowing spring-physics twin-tails + cat/puppy ears
-    _paintBackHairAndTwinTails(canvas, headCenter, radius);
-    _paintCatPuppyEars(canvas, headCenter, radius);
+    // 4. Back hair depth plane & flowing spring-physics hairstyles + cat/puppy ears
+    _paintBackHairAndTwinTails(canvas, headCenter + parallaxBack, radius);
+    _paintCatPuppyEars(canvas, headCenter + parallaxBack * 0.5, radius);
 
-    // 5. Head & anime V-jaw chin contour + ears
-    _paintHeadContour(canvas, headCenter, radius);
+    // 5. Volumetric 3D Head & anime V-jaw chin contour + ears
+    final faceOrigin = headCenter + parallaxFace;
+    _paintHeadContour(canvas, faceOrigin, radius);
 
-    // 6. Cheeks anime blush & yandere shadow across forehead
-    _paintBlushAndForeheadShadow(canvas, headCenter, radius);
+    // 6. Cheeks 3D subsurface anime blush & yandere shadow across forehead
+    _paintBlushAndForeheadShadow(canvas, faceOrigin, radius);
 
-    // 7. Expressive eyes with dynamic phase pupils & eye-tracking
-    _paintEyes(canvas, headCenter, radius);
+    // 7. Expressive 3D eyes with custom eye colors, refraction & eye-tracking
+    _paintEyes(canvas, faceOrigin, radius);
 
-    // 8. Eyebrows, dainty nose & phase/Gemini-specific mouth
-    _paintBrowsNoseAndMouth(canvas, headCenter, radius);
+    // 8. Eyebrows, 3D nose bridge highlight & phase/Gemini-specific mouth
+    _paintBrowsNoseAndMouth(canvas, faceOrigin, radius);
 
     // 9. Equipped Face Accessory (Heart Glasses, Bandage, Y2K Stars)
-    _paintFaceAccessory(canvas, headCenter, radius);
+    _paintFaceAccessory(canvas, headCenter + parallaxFront * 0.85, radius);
 
-    // 10. Front bangs, hair highlights, ribbons & equipped Headwear
-    _paintFrontBangsAndRibbons(canvas, headCenter, radius);
-    _paintWardrobeHeadwear(canvas, headCenter, radius);
+    // 10. Front bangs depth plane (with cast drop-shadow), Hime-strands, ribbons & Headwear
+    _paintFrontBangsAndRibbons(canvas, headCenter + parallaxFront, radius);
+    _paintWardrobeHeadwear(canvas, headCenter + parallaxFront * 1.1, radius);
 
     canvas.restore();
 
@@ -679,80 +714,115 @@ class MimiAvatarPainter extends CustomPainter {
       (corruption * 0.85).clamp(0.0, 1.0),
     )!;
     final hairShadow = Color.lerp(
-      wardrobe.hairStyle.primaryColor.withAlphaFactor(0.75),
-      const Color(0xFF1F020C),
+      wardrobe.hairStyle.primaryColor.withAlphaFactor(0.68),
+      const Color(0xFF1A020A),
       corruption,
     )!;
+    final hairHighlight = wardrobe.hairStyle.highlightColor;
 
     final sway = math.sin(time * 2.1) * (r * 0.06) + hairSpringOffset.dx * 0.85;
     final springY = hairSpringOffset.dy * 0.65;
 
     final tailPaint = Paint()
       ..shader = ui.Gradient.linear(
-        c.translate(0, -r),
-        c.translate(0, r * 1.35),
-        [hairBase, hairShadow],
+        c.translate(-r * 0.4, -r),
+        c.translate(r * 0.4, r * 1.45),
+        [hairHighlight.withAlphaFactor(0.92), hairBase, hairShadow],
+        const [0.0, 0.38, 1.0],
       );
     final outlinePaint = Paint()
       ..color = const Color(0xFF3A0E21).withAlphaFactor(0.85)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.2;
 
-    // Left twin-tail (driven by 2.5D harmonic spring physics)
-    final leftTail = Path()
-      ..moveTo(c.dx - r * 0.72, c.dy - r * 0.42)
-      ..cubicTo(
-        c.dx - r * 1.38 + sway * 0.4,
-        c.dy - r * 0.25 + springY * 0.3,
-        c.dx - r * 1.45 + sway,
-        c.dy + r * 0.65 + springY,
-        c.dx - r * 1.05 + sway * 1.25,
-        c.dy + r * 1.25 + springY * 1.2,
-      )
-      ..cubicTo(
-        c.dx - r * 0.85 + sway,
-        c.dy + r * 0.95 + springY,
-        c.dx - r * 0.78,
-        c.dy + r * 0.35,
-        c.dx - r * 0.58,
-        c.dy - r * 0.15,
-      )
-      ..close();
-    canvas.drawPath(leftTail, tailPaint);
-    canvas.drawPath(leftTail, outlinePaint);
+    switch (wardrobe.hairGeometry) {
+      case MimiHairGeometry.twinTails:
+        // Voluminous 3D Twin-Tails with inner shadow strand
+        for (final sign in [-1.0, 1.0]) {
+          final tail = Path()
+            ..moveTo(c.dx + sign * r * 0.70, c.dy - r * 0.44)
+            ..cubicTo(
+              c.dx + sign * r * 1.44 + sway * 0.4,
+              c.dy - r * 0.24 + springY * 0.3,
+              c.dx + sign * r * 1.52 + sign * sway,
+              c.dy + r * 0.68 + springY,
+              c.dx + sign * r * 1.12 + sign * sway * 1.25,
+              c.dy + r * 1.34 + springY * 1.2,
+            )
+            ..cubicTo(
+              c.dx + sign * r * 0.82 + sign * sway,
+              c.dy + r * 0.98 + springY,
+              c.dx + sign * r * 0.76,
+              c.dy + r * 0.35,
+              c.dx + sign * r * 0.56,
+              c.dy - r * 0.15,
+            )
+            ..close();
+          canvas.drawPath(tail, tailPaint);
+          canvas.drawPath(tail, outlinePaint);
+        }
+        break;
 
-    // Right twin-tail (driven by 2.5D harmonic spring physics)
-    final rightTail = Path()
-      ..moveTo(c.dx + r * 0.72, c.dy - r * 0.42)
-      ..cubicTo(
-        c.dx + r * 1.38 + sway * 0.4,
-        c.dy - r * 0.25 + springY * 0.3,
-        c.dx + r * 1.45 - sway,
-        c.dy + r * 0.65 + springY,
-        c.dx + r * 1.05 - sway * 1.25,
-        c.dy + r * 1.25 + springY * 1.2,
-      )
-      ..cubicTo(
-        c.dx + r * 0.85 - sway,
-        c.dy + r * 0.95 + springY,
-        c.dx + r * 0.78,
-        c.dy + r * 0.35,
-        c.dx + r * 0.58,
-        c.dy - r * 0.15,
-      )
-      ..close();
-    canvas.drawPath(rightTail, tailPaint);
-    canvas.drawPath(rightTail, outlinePaint);
+      case MimiHairGeometry.himeCut:
+        // Long Royal Hime-Cut Back Curtain with silky gradient
+        final himeBack = Path()
+          ..moveTo(c.dx - r * 0.88, c.dy - r * 0.25)
+          ..quadraticBezierTo(
+            c.dx - r * 1.05 + sway * 0.5,
+            c.dy + r * 0.70 + springY,
+            c.dx - r * 0.92 + sway,
+            c.dy + r * 1.42 + springY,
+          )
+          ..lineTo(c.dx + r * 0.92 + sway, c.dy + r * 1.42 + springY)
+          ..quadraticBezierTo(
+            c.dx + r * 1.05 + sway * 0.5,
+            c.dy + r * 0.70 + springY,
+            c.dx + r * 0.88,
+            c.dy - r * 0.25,
+          )
+          ..close();
+        canvas.drawPath(himeBack, tailPaint);
+        canvas.drawPath(himeBack, outlinePaint);
+        break;
 
-    // Back hair dome
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: c.translate(0, -r * 0.08),
-        width: r * 1.76,
-        height: r * 1.72,
-      ),
-      tailPaint,
+      case MimiHairGeometry.fluffyBob:
+        // Rounded 3D Fluffy Kawaii Bob framing the cheeks & neck
+        final bobRect = Rect.fromCenter(
+          center: c.translate(sway * 0.25, r * 0.12 + springY * 0.25),
+          width: r * 2.02,
+          height: r * 1.88,
+        );
+        canvas.drawOval(bobRect, tailPaint);
+        canvas.drawOval(bobRect, outlinePaint);
+        break;
+
+      case MimiHairGeometry.drillTails:
+        // Gothic Lolita 3D Spiral Drill Curls (3 stacked cones per side)
+        for (final sign in [-1.0, 1.0]) {
+          for (var seg = 0; seg < 3; seg++) {
+            final segY = c.dy - r * 0.12 + seg * r * 0.40 + springY * (0.4 + seg * 0.3);
+            final segX = c.dx + sign * (r * 0.98 + seg * r * 0.05) + sway * (0.5 + seg * 0.25);
+            final segW = r * (0.44 - seg * 0.07);
+            final segH = r * 0.46;
+            final drillRect = Rect.fromCenter(
+              center: Offset(segX, segY),
+              width: segW,
+              height: segH,
+            );
+            canvas.drawOval(drillRect, tailPaint);
+            canvas.drawOval(drillRect, outlinePaint);
+          }
+        }
+        break;
+    }
+
+    // Back 3D hair dome with spherical specular highlight
+    final domeRect = Rect.fromCenter(
+      center: c.translate(0, -r * 0.08),
+      width: r * 1.78,
+      height: r * 1.74,
     );
+    canvas.drawOval(domeRect, tailPaint);
   }
 
   /// Renders spring-physics Kawaii Cat/Puppy Ears that twitch & sway with
@@ -828,46 +898,100 @@ class MimiAvatarPainter extends CustomPainter {
       const Color(0xFFEBD2DC),
       corruption * 0.7,
     )!;
+    final neckShadow = Color.lerp(
+      const Color(0xFFF3C6D3),
+      const Color(0xFFB58397),
+      corruption * 0.8,
+    )!;
 
-    // Neck
+    // 3D Cylindrical Shaded Neck + Chin Cast Shadow
     final neckRect = RRect.fromRectAndRadius(
       Rect.fromCenter(
-        center: c.translate(0, r * 0.82),
-        width: r * 0.36,
-        height: r * 0.42,
+        center: c.translate(0, r * 0.84),
+        width: r * 0.38,
+        height: r * 0.46,
       ),
-      Radius.circular(r * 0.1),
+      Radius.circular(r * 0.12),
     );
-    canvas.drawRRect(neckRect, Paint()..color = skinColor);
+    canvas.drawRRect(
+      neckRect,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          neckRect.outerRect.topCenter,
+          neckRect.outerRect.bottomCenter,
+          [neckShadow, skinColor],
+        ),
+    );
 
-    // Shoulders / Gothic-Kawaii Outfit
-    final dressColor = Color.lerp(
-      const Color(0xFF4A1525),
-      const Color(0xFF14020A),
+    // 3D Sculpted Upper Bust, Shoulders & Arms
+    final dressTop = Color.lerp(
+      const Color(0xFF6A1B3A),
+      const Color(0xFF280414),
+      corruption,
+    )!;
+    final dressBottom = Color.lerp(
+      const Color(0xFF330819),
+      const Color(0xFF0E0106),
       corruption,
     )!;
     final shoulderPath = Path()
-      ..moveTo(c.dx - r * 0.75, c.dy + r * 1.32)
-      ..quadraticBezierTo(
-        c.dx - r * 0.55,
-        c.dy + r * 0.90,
+      ..moveTo(c.dx - r * 0.88, c.dy + r * 1.42)
+      ..cubicTo(
+        c.dx - r * 0.82,
+        c.dy + r * 0.94,
+        c.dx - r * 0.48,
+        c.dy + r * 0.88,
         c.dx,
         c.dy + r * 0.94,
       )
-      ..quadraticBezierTo(
-        c.dx + r * 0.55,
-        c.dy + r * 0.90,
-        c.dx + r * 0.75,
-        c.dy + r * 1.32,
+      ..cubicTo(
+        c.dx + r * 0.48,
+        c.dy + r * 0.88,
+        c.dx + r * 0.82,
+        c.dy + r * 0.94,
+        c.dx + r * 0.88,
+        c.dy + r * 1.42,
       )
       ..close();
-    canvas.drawPath(shoulderPath, Paint()..color = dressColor);
+    canvas.drawPath(
+      shoulderPath,
+      Paint()
+        ..shader = ui.Gradient.linear(
+          c.translate(0, r * 0.88),
+          c.translate(0, r * 1.42),
+          [dressTop, dressBottom],
+        ),
+    );
+    canvas.drawPath(
+      shoulderPath,
+      Paint()
+        ..color = CuteHorrorPalette.hotPink.withAlphaFactor(0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.8,
+    );
+
+    // Subtle 3D Collarbone highlight lines
+    final claviclePaint = Paint()
+      ..color = Colors.white.withAlphaFactor(0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      c.translate(-r * 0.24, r * 0.92),
+      c.translate(-r * 0.06, r * 0.96),
+      claviclePaint,
+    );
+    canvas.drawLine(
+      c.translate(r * 0.24, r * 0.92),
+      c.translate(r * 0.06, r * 0.96),
+      claviclePaint,
+    );
 
     // Chest Ribbon Bow & Wardrobe Collar Variations
     final bowColor = corruption >= 0.55
         ? CuteHorrorPalette.cyberCrimson
         : CuteHorrorPalette.hotPink;
-    final bowCenter = c.translate(0, r * 1.02);
+    final bowCenter = c.translate(0, r * 1.05);
 
     if (wardrobe.collarStyle == MimiCollarStyle.gothLoliChoker) {
       // Goth-Loli Lace Choker around the neck with heart pendant
@@ -892,8 +1016,8 @@ class MimiAvatarPainter extends CustomPainter {
       canvas.drawOval(
         Rect.fromCenter(
           center: c.translate(0, r * 0.98),
-          width: r * 0.90,
-          height: r * 0.30,
+          width: r * 0.94,
+          height: r * 0.32,
         ),
         hoodiePaint,
       );
@@ -903,40 +1027,67 @@ class MimiAvatarPainter extends CustomPainter {
         canvas.drawCircle(
           c.translate(i * r * 0.11, r * 0.95),
           r * 0.09,
-          Paint()..color = Colors.white.withAlphaFactor(0.92),
+          Paint()..color = Colors.white.withAlphaFactor(0.94),
         );
       }
     }
 
     final bowPath = Path()
       ..moveTo(bowCenter.dx, bowCenter.dy)
-      ..lineTo(bowCenter.dx - r * 0.28, bowCenter.dy - r * 0.14)
-      ..lineTo(bowCenter.dx - r * 0.24, bowCenter.dy + r * 0.14)
+      ..lineTo(bowCenter.dx - r * 0.30, bowCenter.dy - r * 0.15)
+      ..lineTo(bowCenter.dx - r * 0.25, bowCenter.dy + r * 0.15)
       ..close()
       ..moveTo(bowCenter.dx, bowCenter.dy)
-      ..lineTo(bowCenter.dx + r * 0.28, bowCenter.dy - r * 0.14)
-      ..lineTo(bowCenter.dx + r * 0.24, bowCenter.dy + r * 0.14)
+      ..lineTo(bowCenter.dx + r * 0.30, bowCenter.dy - r * 0.15)
+      ..lineTo(bowCenter.dx + r * 0.25, bowCenter.dy + r * 0.15)
       ..close();
     canvas.drawPath(bowPath, Paint()..color = bowColor);
     _drawHeartShape(
       canvas,
       bowCenter.translate(0, -r * 0.04),
-      r * 0.11,
-      Paint()..color = Colors.white.withAlphaFactor(0.9),
+      r * 0.12,
+      Paint()..color = Colors.white.withAlphaFactor(0.95),
     );
   }
 
   void _paintHeadContour(Canvas canvas, Offset c, double r) {
+    final skinCenterHighlight = Color.lerp(
+      const Color(0xFFFFF9FB),
+      const Color(0xFFF8E6EE),
+      corruption * 0.65,
+    )!;
     final skinBase = Color.lerp(
-      const Color(0xFFFFF4F6),
-      const Color(0xFFF2DCE5),
+      const Color(0xFFFFEDF2),
+      const Color(0xFFEAD0DB),
       corruption * 0.75,
+    )!;
+    final skinEdgeShadow = Color.lerp(
+      const Color(0xFFF7CEDC),
+      const Color(0xFFC99EB0),
+      corruption * 0.85,
     )!;
     final skinOutline = Color.lerp(
       const Color(0xFF6B2239),
       const Color(0xFF2B0412),
       corruption,
     )!;
+
+    // 3D Cute Anime Ears on the sides of the head
+    for (final sign in [-1.0, 1.0]) {
+      final earRect = Rect.fromCenter(
+        center: c.translate(sign * r * 0.74, r * 0.12),
+        width: r * 0.22,
+        height: r * 0.32,
+      );
+      canvas.drawOval(earRect, Paint()..color = skinEdgeShadow);
+      canvas.drawOval(
+        earRect,
+        Paint()
+          ..color = skinOutline
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6,
+      );
+    }
 
     // Anime face shape with soft cheeks and tapered chin
     final facePath = Path()
@@ -971,12 +1122,25 @@ class MimiAvatarPainter extends CustomPainter {
       )
       ..close();
 
-    canvas.drawPath(facePath, Paint()..color = skinBase);
-    // V4 Anime Head 3.5: Cel-Shading Rim-Light highlight along chin & lower cheek
+    // True 3D Volumetric Spherical Face Shader (shifts light source with lookOffset)
+    final lightFocus = c.translate(
+      -lookOffset.dx * r * 0.18,
+      -r * 0.12 - lookOffset.dy * r * 0.14,
+    );
+    final face3dPaint = Paint()
+      ..shader = ui.Gradient.radial(
+        lightFocus,
+        r * 0.92,
+        [skinCenterHighlight, skinBase, skinEdgeShadow],
+        const [0.0, 0.62, 1.0],
+      );
+    canvas.drawPath(facePath, face3dPaint);
+
+    // V4/V5: Cel-Shading Rim-Light highlight along chin & lower cheek
     final rimLightPaint = Paint()
-      ..color = Colors.white.withAlphaFactor(0.68)
+      ..color = Colors.white.withAlphaFactor(0.76)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.8
+      ..strokeWidth = 3.0
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(
       Rect.fromCenter(
@@ -1135,11 +1299,14 @@ class MimiAvatarPainter extends CustomPainter {
           : (phase == EscalationPhase.clingyGlitch
               ? const Color(0xFF4A0726)
               : CuteHorrorPalette.voidBlack);
-      final irisBottomColor = phase == EscalationPhase.sugarPastel
+      final defaultBottomColor = phase == EscalationPhase.sugarPastel
           ? CuteHorrorPalette.hotPink
           : (phase == EscalationPhase.clingyGlitch
               ? CuteHorrorPalette.neonRose
               : CuteHorrorPalette.cyberCrimson);
+      final irisBottomColor = isLeft
+          ? wardrobe.eyeColor.leftIrisColor(defaultBottomColor)
+          : wardrobe.eyeColor.rightIrisColor(defaultBottomColor);
 
       final irisRect = Rect.fromCenter(
         center: pupilCenter,
@@ -1154,6 +1321,19 @@ class MimiAvatarPainter extends CustomPainter {
             irisRect.bottomCenter,
             [irisTopColor, irisBottomColor],
           ),
+      );
+
+      // 3D Glass-Dome Lower Iris Crescent Luminescence
+      canvas.drawArc(
+        irisRect.deflate(irisW * 0.12),
+        math.pi * 0.15,
+        math.pi * 0.70,
+        false,
+        Paint()
+          ..color = Colors.white.withAlphaFactor(0.55)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2
+          ..strokeCap = StrokeCap.round,
       );
 
       // Phase-Specific Dynamic Pupils

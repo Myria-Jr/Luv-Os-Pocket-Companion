@@ -403,6 +403,11 @@ class HardwareBridgeService with WidgetsBindingObserver {
         _pausedAt = DateTime.now();
         _monotonicWatch.stop();
         _reconfigureHeartbeatLoop();
+        notificationService.showLiveMimiStatusNotification(
+          message:
+              'Mimi läuft im Hintergrund ♡ // Aufmerksamkeits-Wächter aktiv! Geh bloß nicht auf TikTok!',
+          isLocked: corruptionController.currentState.appLockActive,
+        );
         notificationService.scheduleGhostNotifications(
           corruptionLevel: _currentCorruptionLevel,
         );
@@ -505,6 +510,34 @@ class HardwareBridgeService with WidgetsBindingObserver {
     } catch (_) {
       // Ignored on non-Android platforms.
     }
+  }
+
+  /// Checks whether `SYSTEM_ALERT_WINDOW` ("Über anderen Apps einblenden") is granted.
+  Future<bool> checkOverlayPermission() async {
+    try {
+      final granted =
+          await _nativeChannel.invokeMethod<bool>('checkOverlayPermission');
+      return granted ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens Android's Overlay Permission screen ("Über anderen Apps einblenden").
+  Future<void> openOverlaySettings() async {
+    try {
+      await _nativeChannel.invokeMethod<bool>('openOverlaySettings');
+    } catch (_) {
+      // Ignored on non-Android platforms.
+    }
+  }
+
+  /// Enables or disables Mimi's background guardian watchdog when the user leaves the app.
+  Future<void> setBackgroundGuardian(bool enabled) async {
+    try {
+      await _nativeChannel
+          .invokeMethod<bool>('setBackgroundGuardian', {'enabled': enabled});
+    } catch (_) {}
   }
 
   void dispose() {

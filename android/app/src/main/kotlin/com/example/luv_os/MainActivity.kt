@@ -5,6 +5,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -22,34 +23,60 @@ class MainActivity : FlutterActivity() {
     private var methodChannel: MethodChannel? = null
 
     private var appLockActive: Boolean = false
-    private var blockedCategories: List<String> = emptyList()
+    private var backgroundGuardianEnabled: Boolean = true
+    private var isInBackground: Boolean = false
+    private var blockedCategories: List<String> = listOf(
+        "TikTok",
+        "Instagram",
+        "YouTube",
+        "WhatsApp",
+        "Snapchat",
+        "Games",
+        "Taschenrechner",
+        "Wetter-App"
+    )
     private var lockReason: String = "Mimi ist sauer! 💢"
     private var requiredHeadpats: Int = 15
+    private var lastInterceptTimestamp: Long = 0L
 
     private val watchdogHandler = Handler(Looper.getMainLooper())
     private val watchdogRunnable = object : Runnable {
         override fun run() {
-            if (appLockActive) {
+            if (appLockActive || (backgroundGuardianEnabled && isInBackground)) {
                 inspectForegroundAndIntercept()
             }
-            watchdogHandler.postDelayed(this, 1800L)
+            watchdogHandler.postDelayed(this, 1400L)
         }
     }
 
-    // Known package fragments for TikTok, Instagram, YouTube, Games & V4 System Apps
+    // Known package fragments for Social Media, Messengers, Browsers, Games & System Apps
     private val blockedPackageKeywords = mapOf(
         "TikTok" to listOf("musically", "trill", "tiktok"),
         "Instagram" to listOf("instagram"),
         "YouTube" to listOf("youtube"),
-        "Games" to listOf("roblox", "genshin", "brawlstars", "clash", "minecraft", "pubg", "freefire"),
-        "Taschenrechner" to listOf("calculator", "calc"),
+        "WhatsApp" to listOf("whatsapp"),
+        "Snapchat" to listOf("snapchat"),
+        "Discord" to listOf("discord"),
+        "Chrome" to listOf("chrome", "sbrowser", "firefox", "opera"),
+        "Games" to listOf("roblox", "genshin", "brawlstars", "clash", "minecraft", "pubg", "freefire", "candycrush"),
+        "Taschenrechner" to listOf("calculator", "calc", "popupcalculator"),
         "Kalender" to listOf("calendar"),
-        "Wetter-App" to listOf("weather")
+        "Wetter-App" to listOf("weather", "daemonapp")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        watchdogHandler.postDelayed(watchdogRunnable, 2000L)
+        watchdogHandler.postDelayed(watchdogRunnable, 1500L)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        isInBackground = false
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isInBackground = true
     }
 
     override fun onDestroy() {
@@ -81,13 +108,20 @@ class MainActivity : FlutterActivity() {
                 }
                 "setAppLockState" -> {
                     appLockActive = call.argument<Boolean>("locked") ?: false
-                    blockedCategories = call.argument<List<String>>("blockedCategories") ?: emptyList()
+                    val passedCategories = call.argument<List<String>>("blockedCategories")
+                    if (!passedCategories.isNullOrEmpty()) {
+                        blockedCategories = passedCategories
+                    }
                     lockReason = call.argument<String>("reason") ?: "Mimi hat deine Apps gesperrt!"
                     requiredHeadpats = call.argument<Int>("requiredHeadpats") ?: 15
                     if (appLockActive) {
                         vibratePattern(longArrayOf(0, 60, 50, 90, 50, 120), 255)
                     }
                     result.success(true)
+                }
+                "setBackgroundGuardian" -> {
+                    backgroundGuardianEnabled = call.argument<Boolean>("enabled") ?: true
+                    result.success(backgroundGuardianEnabled)
                 }
                 "checkUsageStatsPermission" -> {
                     result.success(hasUsageStatsPermission())
@@ -97,6 +131,29 @@ class MainActivity : FlutterActivity() {
                         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(intent)
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
+                "checkOverlayPermission" -> {
+                    val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        Settings.canDrawOverlays(this)
+                    } else {
+                        true
+                    }
+                    result.success(granted)
+                }
+                "openOverlaySettings" -> {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        }
                         result.success(true)
                     } catch (_: Exception) {
                         result.success(false)
@@ -132,12 +189,14 @@ class MainActivity : FlutterActivity() {
 
     private fun inspectForegroundAndIntercept() {
         if (!hasUsageStatsPermission()) return
+        val now = System.currentTimeMillis()
+        if (now - lastInterceptTimestamp < 2800L) return
+
         try {
             val usageStatsManager =
                 getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
-            val endTime = System.currentTimeMillis()
-            val beginTime = endTime - 8000L
-            val events = usageStatsManager.queryEvents(beginTime, endTime)
+            val beginTime = now - 10000L
+            val events = usageStatsManager.queryEvents(beginTime, now)
             val event = UsageEvents.Event()
             var latestForegroundPkg: String? = null
 
@@ -149,12 +208,23 @@ class MainActivity : FlutterActivity() {
             }
 
             val pkg = latestForegroundPkg?.lowercase() ?: return
-            if (pkg == packageName.lowercase() || pkg.contains("launcher") || pkg.contains("systemui")) {
+            if (pkg == packageName.lowercase() ||
+                pkg.contains("launcher") ||
+                pkg.contains("systemui") ||
+                pkg.contains("settings") ||
+                pkg.contains("permissioncontroller")
+            ) {
                 return
             }
 
+            val activeCheckList = if (blockedCategories.isNotEmpty()) {
+                blockedCategories
+            } else {
+                blockedPackageKeywords.keys.toList()
+            }
+
             var matchedCategory: String? = null
-            for (category in blockedCategories) {
+            for (category in activeCheckList) {
                 val keywords = blockedPackageKeywords[category] ?: listOf(category.lowercase())
                 if (keywords.any { kw -> pkg.contains(kw) }) {
                     matchedCategory = category
@@ -163,12 +233,15 @@ class MainActivity : FlutterActivity() {
             }
 
             if (matchedCategory != null) {
-                vibratePattern(longArrayOf(0, 90, 45, 110, 45, 160), 255)
+                lastInterceptTimestamp = now
+                appLockActive = true
+                vibratePattern(longArrayOf(0, 95, 45, 120, 45, 180), 255)
                 val bringFrontIntent = Intent(this, MainActivity::class.java).apply {
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP
                     )
                 }
                 startActivity(bringFrontIntent)

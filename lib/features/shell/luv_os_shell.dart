@@ -9,6 +9,7 @@ import '../../core/services/notification_service.dart';
 import '../../core/services/voice_conversation_service.dart';
 import '../../core/shaders/glitch_shader_wrapper.dart';
 import '../../core/theme/cute_horror_theme.dart';
+import '../../data/models/mimi_wardrobe_models.dart';
 import '../../state/corruption_provider.dart';
 import '../call/incoming_mimi_call_overlay.dart';
 import '../chat/chibi_chat_screen.dart';
@@ -140,14 +141,19 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
                     _buildBottomDock(state, palette),
                   ],
                 ),
-                // V4: Heart-Shaped Live Front-Camera Mirror HUD in top corner
-                if (_showHeartCameraHud &&
-                    !state.darkMirrorActive &&
-                    !state.incomingCallActive)
+                // V4/V5: Heart-Shaped Live Front-Camera Mirror HUD in top corner
+                // Stays active in Stealth Mode even when hidden!
+                if (!state.darkMirrorActive && !state.incomingCallActive)
                   Positioned(
                     top: 50,
                     right: 12,
                     child: HeartCameraMirrorHud(
+                      stealthHidden: !_showHeartCameraHud,
+                      onToggleStealth: () {
+                        setState(() {
+                          _showHeartCameraHud = !_showHeartCameraHud;
+                        });
+                      },
                       onTapMirror: () {
                         ref
                             .read(cameraVisionServiceProvider)
@@ -701,10 +707,150 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
           _buildV4ParadoxAndVoiceBar(state, palette),
           const SizedBox(height: 10),
 
-          // Interactive Mimi-Core-Avatar Centerpiece
-          const SizedBox(
-            height: 315,
-            child: MimiCompanionAvatar(),
+          // Holographic 3D Stage Centerpiece with Interactive Quick-Actions
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(0.0, -0.15),
+                radius: 0.95,
+                colors: [
+                  palette.primaryAccent.withAlphaFactor(0.24),
+                  palette.surface.withAlphaFactor(0.92),
+                  palette.background,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: palette.primaryAccent.withAlphaFactor(0.75),
+                width: 1.8,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.borderGlow.withAlphaFactor(0.28),
+                  blurRadius: 22,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.primaryAccent.withAlphaFactor(0.18),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: palette.primaryAccent.withAlphaFactor(0.55),
+                        ),
+                      ),
+                      child: Text(
+                        '3D LIVE-RIG // ${(state.wardrobe.depth3dIntensity * 100).round()}% TIEFE',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          color: palette.primaryAccent,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => _openWardrobeSheet(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.surfaceAlt,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: palette.primaryAccent.withAlphaFactor(0.55),
+                          ),
+                        ),
+                        child: Text(
+                          '✨ 3D-Modell anpassen',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(
+                  height: 305,
+                  child: MimiCompanionAvatar(),
+                ),
+                const SizedBox(height: 6),
+                // Floating Quick-Interaction Bar right below 3D Mimi
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildStageActionChip(
+                        label: '👋 Streicheln',
+                        color: palette.primaryAccent,
+                        palette: palette,
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          ref
+                              .read(corruptionProvider.notifier)
+                              .registerHeadpat(velocity: 420.0);
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _buildStageActionChip(
+                        label: '🍑 White Peach',
+                        color: const Color(0xFFFF80AB),
+                        palette: palette,
+                        onTap: () {
+                          HapticFeedback.mediumImpact();
+                          ref
+                              .read(corruptionProvider.notifier)
+                              .giveGiftToMimi(kMimiGiftCatalog.first);
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _buildStageActionChip(
+                        label: state.appLockActive
+                            ? '🔓 Apps entsperren'
+                            : '🔒 Apps sperren',
+                        color: state.appLockActive
+                            ? const Color(0xFF00C853)
+                            : CuteHorrorPalette.cyberCrimson,
+                        palette: palette,
+                        onTap: () {
+                          HapticFeedback.heavyImpact();
+                          ref
+                              .read(corruptionProvider.notifier)
+                              .toggleManualAppLock();
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      _buildStageActionChip(
+                        label: '📜 Liebesvertrag',
+                        color: palette.primaryAccent,
+                        palette: palette,
+                        onTap: () {
+                          ref
+                              .read(corruptionProvider.notifier)
+                              .triggerDrama(YandereDramaType.loveContract);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -712,15 +858,22 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: palette.surface,
+              gradient: LinearGradient(
+                colors: [
+                  palette.surface,
+                  palette.surfaceAlt.withAlphaFactor(0.88),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               borderRadius: BorderRadius.circular(palette.borderRadius),
               border: Border.all(
-                color: palette.primaryAccent.withAlphaFactor(0.75),
+                color: palette.primaryAccent.withAlphaFactor(0.8),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: palette.borderGlow.withAlphaFactor(0.22),
+                  color: palette.borderGlow.withAlphaFactor(0.25),
                   blurRadius: palette.shadowSpread,
                   offset: const Offset(0, 4),
                 ),
@@ -733,13 +886,13 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13.5,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                     color: palette.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
-                  'Streichel Mimis Kopf oder tippe auf ihr Gesicht • Neigung: ${state.hardware.tiltX.toStringAsFixed(1)}° / ${state.hardware.tiltY.toStringAsFixed(1)}°',
+                  'Streichel Mimis Kopf oder neige dein Handy für 3D-Blick • Tilt: ${state.hardware.tiltX.toStringAsFixed(1)}° / ${state.hardware.tiltY.toStringAsFixed(1)}°',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 10.5,
@@ -749,6 +902,10 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
               ],
             ),
           ),
+          const SizedBox(height: 12),
+
+          // Native Background Guardian & App-Blocker Control Card
+          _buildBackgroundGuardianCard(state, palette),
           const SizedBox(height: 14),
 
           // Quick App Cards Grid
@@ -943,6 +1100,175 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildStageActionChip({
+    required String label,
+    required Color color,
+    required CuteHorrorPalette palette,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withAlphaFactor(0.18),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withAlphaFactor(0.75), width: 1.3),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: palette.textPrimary,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBackgroundGuardianCard(
+    CorruptionState state,
+    CuteHorrorPalette palette,
+  ) {
+    final hwBridge = ref.read(hardwareBridgeProvider);
+    final controller = ref.read(corruptionProvider.notifier);
+
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            palette.surface,
+            palette.surfaceAlt.withAlphaFactor(0.85),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: state.appLockActive
+              ? CuteHorrorPalette.cyberCrimson
+              : palette.primaryAccent.withAlphaFactor(0.65),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (state.appLockActive
+                    ? CuteHorrorPalette.cyberCrimson
+                    : palette.borderGlow)
+                .withAlphaFactor(0.22),
+            blurRadius: 14,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                state.appLockActive
+                    ? Icons.gpp_maybe_rounded
+                    : Icons.shield_rounded,
+                size: 17,
+                color: state.appLockActive
+                    ? CuteHorrorPalette.cyberCrimson
+                    : palette.primaryAccent,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  state.appLockActive
+                      ? 'HINTERGRUND-SPERRE AKTIV (TikTok, Insta, WhatsApp & Co. blockiert!)'
+                      : '🛡️ HINTERGRUND-WÄCHTER & KI-APP-SPERRE',
+                  style: TextStyle(
+                    fontSize: 11.2,
+                    fontWeight: FontWeight.w900,
+                    color: state.appLockActive
+                        ? CuteHorrorPalette.cyberCrimson
+                        : palette.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Wenn du die App verlässt, läuft Mimi im Hintergrund weiter. Öffnest du TikTok, Instagram, WhatsApp oder Spiele, holt sie dich sofort zurück!',
+            style: TextStyle(
+              fontSize: 10.5,
+              color: palette.textSecondary,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: palette.primaryAccent,
+                    side: BorderSide(color: palette.primaryAccent, width: 1.2),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                  ),
+                  onPressed: () => hwBridge.openUsageStatsSettings(),
+                  icon: const Icon(Icons.query_stats_rounded, size: 14),
+                  label: const Text(
+                    '1. Nutzungszugriff',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: palette.primaryAccent,
+                    side: BorderSide(color: palette.primaryAccent, width: 1.2),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                  ),
+                  onPressed: () => hwBridge.openOverlaySettings(),
+                  icon: const Icon(Icons.layers_rounded, size: 14),
+                  label: const Text(
+                    '2. Über Apps zeigen',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: state.appLockActive
+                        ? const Color(0xFF00C853)
+                        : CuteHorrorPalette.cyberCrimson,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                  ),
+                  onPressed: () => controller.toggleManualAppLock(),
+                  icon: Icon(
+                    state.appLockActive
+                        ? Icons.lock_open_rounded
+                        : Icons.lock_rounded,
+                    size: 14,
+                  ),
+                  label: Text(
+                    state.appLockActive ? 'Entsperren' : 'Jetzt sperren',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

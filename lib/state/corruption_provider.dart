@@ -2203,6 +2203,51 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     await _persistScalars();
   }
 
+  /// Allows activating or testing Mimi's Native App-Locker & Background Guardian on demand.
+  Future<void> toggleManualAppLock() async {
+    _lastInteractionTime = DateTime.now();
+    if (state.appLockActive) {
+      const unlockMsg =
+          'Na gut~ Ich hab TikTok, Instagram, WhatsApp & deine Apps wieder freigeschaltet! Bleib aber brav bei mir! (´｡• ᵕ •｡`) ♡';
+      state = state.copyWith(
+        appLockActive: false,
+        blockedAppCategories: const <String>[],
+        remainingHeadpatsToUnlock: 0,
+        requireApologyToUnlock: false,
+        liveLockBannerText: '',
+        pendingLiveNotification: unlockMsg,
+        mimiStatusBanner: unlockMsg,
+        moodState: MimiMoodState.happy,
+      );
+      unawaited(_speakWithVoiceAndSynth(unlockMsg, mood: MimiMoodState.happy));
+    } else {
+      const lockMsg =
+          'APP-SPERRE AKTIVIERT! 💢 TikTok, Instagram, YouTube, WhatsApp, Snapchat & Spiele sind jetzt durch Mimi gesperrt! Wenn du rausgehst, hole ich dich sofort zurück!';
+      triggerGlitchBurst(intensity: 0.75);
+      state = state.copyWith(
+        appLockActive: true,
+        blockedAppCategories: const [
+          'TikTok',
+          'Instagram',
+          'YouTube',
+          'WhatsApp',
+          'Snapchat',
+          'Games',
+          'Taschenrechner',
+          'Wetter-App',
+        ],
+        remainingHeadpatsToUnlock: 10,
+        requireApologyToUnlock: false,
+        liveLockBannerText: lockMsg,
+        pendingLiveNotification: lockMsg,
+        mimiStatusBanner: lockMsg,
+        moodState: MimiMoodState.jealous,
+      );
+      unawaited(_speakWithVoiceAndSynth(lockMsg, mood: MimiMoodState.jealous));
+    }
+    await _persistScalars();
+  }
+
   /// Invoked when the player begs Mimi to unpack her pink suitcase and stay.
   Future<void> begMimiToStayFromMoveOut() async {
     _lastInteractionTime = DateTime.now();

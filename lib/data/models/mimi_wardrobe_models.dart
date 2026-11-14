@@ -166,58 +166,173 @@ enum MimiCollarStyle {
   }
 }
 
+/// Eye color customization for Mimi's 3D Anime Model.
+enum MimiEyeColor {
+  pinkberry,
+  emeraldNeon,
+  sapphireDoll,
+  crimsonYandere,
+  heterochromia;
+
+  String get label {
+    switch (this) {
+      case MimiEyeColor.pinkberry:
+        return 'Beeren-Pink ♡';
+      case MimiEyeColor.emeraldNeon:
+        return 'Smaragd-Neon 💚';
+      case MimiEyeColor.sapphireDoll:
+        return 'Saphir-Puppe 💙';
+      case MimiEyeColor.crimsonYandere:
+        return 'Blut-Karmesin ❤️‍🔥';
+      case MimiEyeColor.heterochromia:
+        return 'Heterochromie (Pink/Cyan) ✨';
+    }
+  }
+
+  Color leftIrisColor(Color fallback) {
+    switch (this) {
+      case MimiEyeColor.pinkberry:
+        return fallback;
+      case MimiEyeColor.emeraldNeon:
+        return const Color(0xFF00E676);
+      case MimiEyeColor.sapphireDoll:
+        return const Color(0xFF29B6F6);
+      case MimiEyeColor.crimsonYandere:
+        return const Color(0xFFFF1744);
+      case MimiEyeColor.heterochromia:
+        return const Color(0xFFFF4081);
+    }
+  }
+
+  Color rightIrisColor(Color fallback) {
+    switch (this) {
+      case MimiEyeColor.heterochromia:
+        return const Color(0xFF00E5FF);
+      default:
+        return leftIrisColor(fallback);
+    }
+  }
+}
+
+/// 3D Hair geometry styles for Mimi.
+enum MimiHairGeometry {
+  twinTails,
+  himeCut,
+  fluffyBob,
+  drillTails;
+
+  String get label {
+    switch (this) {
+      case MimiHairGeometry.twinTails:
+        return 'Lange 3D Twin-Tails';
+      case MimiHairGeometry.himeCut:
+        return 'Hime-Prinzessin Schnitt';
+      case MimiHairGeometry.fluffyBob:
+        return 'Flauschiger Kawaii-Bob';
+      case MimiHairGeometry.drillTails:
+        return 'Gothic Spiral-Locken';
+    }
+  }
+
+  String get iconEmoji {
+    switch (this) {
+      case MimiHairGeometry.twinTails:
+        return '🎀';
+      case MimiHairGeometry.himeCut:
+        return '👑';
+      case MimiHairGeometry.fluffyBob:
+        return '🌸';
+      case MimiHairGeometry.drillTails:
+        return '🌀';
+    }
+  }
+}
+
 @immutable
 class MimiWardrobeLoadout {
   final MimiHairStyle hairStyle;
+  final MimiHairGeometry hairGeometry;
+  final MimiEyeColor eyeColor;
   final MimiHeadwear headwear;
   final MimiFaceAccessory faceAccessory;
   final MimiCollarStyle collarStyle;
+  final double depth3dIntensity;
+  final double avatarScale;
 
   const MimiWardrobeLoadout({
     this.hairStyle = MimiHairStyle.strawberryPink,
+    this.hairGeometry = MimiHairGeometry.twinTails,
+    this.eyeColor = MimiEyeColor.pinkberry,
     this.headwear = MimiHeadwear.classicRibbons,
     this.faceAccessory = MimiFaceAccessory.none,
     this.collarStyle = MimiCollarStyle.sailorSeifuku,
+    this.depth3dIntensity = 1.0,
+    this.avatarScale = 1.0,
   });
 
   String get summary =>
-      '${hairStyle.label}, ${headwear.label}, ${faceAccessory.label}, ${collarStyle.label}';
+      '${hairStyle.label} (${hairGeometry.label}), ${eyeColor.label}, ${headwear.label}, ${faceAccessory.label}, ${collarStyle.label}';
 
   MimiWardrobeLoadout copyWith({
     MimiHairStyle? hairStyle,
+    MimiHairGeometry? hairGeometry,
+    MimiEyeColor? eyeColor,
     MimiHeadwear? headwear,
     MimiFaceAccessory? faceAccessory,
     MimiCollarStyle? collarStyle,
+    double? depth3dIntensity,
+    double? avatarScale,
   }) {
     return MimiWardrobeLoadout(
       hairStyle: hairStyle ?? this.hairStyle,
+      hairGeometry: hairGeometry ?? this.hairGeometry,
+      eyeColor: eyeColor ?? this.eyeColor,
       headwear: headwear ?? this.headwear,
       faceAccessory: faceAccessory ?? this.faceAccessory,
       collarStyle: collarStyle ?? this.collarStyle,
+      depth3dIntensity:
+          (depth3dIntensity ?? this.depth3dIntensity).clamp(0.0, 1.5),
+      avatarScale: (avatarScale ?? this.avatarScale).clamp(0.85, 1.20),
     );
   }
 
   Map<String, dynamic> toJson() => {
         'hairStyle': hairStyle.index,
+        'hairGeometry': hairGeometry.index,
+        'eyeColor': eyeColor.index,
         'headwear': headwear.index,
         'faceAccessory': faceAccessory.index,
         'collarStyle': collarStyle.index,
+        'depth3dIntensity': depth3dIntensity,
+        'avatarScale': avatarScale,
       };
 
   factory MimiWardrobeLoadout.fromJson(Map<String, dynamic> json) {
     final hIdx = ((json['hairStyle'] as num?)?.toInt() ?? 0)
         .clamp(0, MimiHairStyle.values.length - 1);
+    final hgIdx = ((json['hairGeometry'] as num?)?.toInt() ?? 0)
+        .clamp(0, MimiHairGeometry.values.length - 1);
+    final ecIdx = ((json['eyeColor'] as num?)?.toInt() ?? 0)
+        .clamp(0, MimiEyeColor.values.length - 1);
     final hwIdx = ((json['headwear'] as num?)?.toInt() ?? 0)
         .clamp(0, MimiHeadwear.values.length - 1);
     final faIdx = ((json['faceAccessory'] as num?)?.toInt() ?? 0)
         .clamp(0, MimiFaceAccessory.values.length - 1);
     final cIdx = ((json['collarStyle'] as num?)?.toInt() ?? 0)
         .clamp(0, MimiCollarStyle.values.length - 1);
+    final d3d = ((json['depth3dIntensity'] as num?)?.toDouble() ?? 1.0)
+        .clamp(0.0, 1.5);
+    final scale =
+        ((json['avatarScale'] as num?)?.toDouble() ?? 1.0).clamp(0.85, 1.20);
     return MimiWardrobeLoadout(
       hairStyle: MimiHairStyle.values[hIdx],
+      hairGeometry: MimiHairGeometry.values[hgIdx],
+      eyeColor: MimiEyeColor.values[ecIdx],
       headwear: MimiHeadwear.values[hwIdx],
       faceAccessory: MimiFaceAccessory.values[faIdx],
       collarStyle: MimiCollarStyle.values[cIdx],
+      depth3dIntensity: d3d,
+      avatarScale: scale,
     );
   }
 }

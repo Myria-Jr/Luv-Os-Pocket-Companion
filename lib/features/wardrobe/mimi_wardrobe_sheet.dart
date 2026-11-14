@@ -204,9 +204,109 @@ class _MimiWardrobeSheetState extends ConsumerState<MimiWardrobeSheet> {
     CuteHorrorPalette palette,
   ) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
-        _buildSectionTitle('1. Haarfarbe & Anime-Shading', palette),
+        _buildSectionTitle('✨ 3D-Perspektive & Kamera-Zoom', palette),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: palette.primaryAccent.withAlphaFactor(0.45),
+            ),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.view_in_ar_rounded,
+                      size: 16, color: palette.primaryAccent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '3D-Tiefen-Parallax: ${(loadout.depth3dIntensity * 100).round()}%',
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 145,
+                    child: Slider(
+                      value: loadout.depth3dIntensity,
+                      min: 0.0,
+                      max: 1.5,
+                      activeColor: palette.primaryAccent,
+                      onChanged: (v) {
+                        controller.updateWardrobe(
+                          loadout.copyWith(depth3dIntensity: v),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Icon(Icons.zoom_in_rounded,
+                      size: 16, color: palette.primaryAccent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Modell-Größe: ${(loadout.avatarScale * 100).round()}%',
+                      style: TextStyle(
+                        color: palette.textPrimary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 145,
+                    child: Slider(
+                      value: loadout.avatarScale,
+                      min: 0.85,
+                      max: 1.20,
+                      activeColor: palette.primaryAccent,
+                      onChanged: (v) {
+                        controller.updateWardrobe(
+                          loadout.copyWith(avatarScale: v),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _buildSectionTitle('1. 3D-Frisur-Form (Hair Geometry)', palette),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: MimiHairGeometry.values.map((geom) {
+            final selected = loadout.hairGeometry == geom;
+            return ChoiceChip(
+              label: Text('${geom.iconEmoji} ${geom.label}'),
+              selected: selected,
+              selectedColor: palette.primaryAccent,
+              labelStyle: TextStyle(
+                color: selected ? Colors.white : palette.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 11.5,
+              ),
+              onSelected: (_) {
+                controller.updateWardrobe(loadout.copyWith(hairGeometry: geom));
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 14),
+        _buildSectionTitle('2. Haarfarbe & Anime-Shading', palette),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -228,7 +328,29 @@ class _MimiWardrobeSheetState extends ConsumerState<MimiWardrobeSheet> {
           }).toList(),
         ),
         const SizedBox(height: 14),
-        _buildSectionTitle('2. Kopfbedeckung (Headwear)', palette),
+        _buildSectionTitle('3. Augenfarbe & Iris-Leuchten', palette),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: MimiEyeColor.values.map((eye) {
+            final selected = loadout.eyeColor == eye;
+            return ChoiceChip(
+              label: Text(eye.label),
+              selected: selected,
+              selectedColor: palette.primaryAccent,
+              labelStyle: TextStyle(
+                color: selected ? Colors.white : palette.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 11.5,
+              ),
+              onSelected: (_) {
+                controller.updateWardrobe(loadout.copyWith(eyeColor: eye));
+              },
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 14),
+        _buildSectionTitle('4. Kopfbedeckung (Headwear)', palette),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -250,7 +372,7 @@ class _MimiWardrobeSheetState extends ConsumerState<MimiWardrobeSheet> {
           }).toList(),
         ),
         const SizedBox(height: 14),
-        _buildSectionTitle('3. Gesichts-Accessoire', palette),
+        _buildSectionTitle('5. Gesichts-Accessoire', palette),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -272,7 +394,7 @@ class _MimiWardrobeSheetState extends ConsumerState<MimiWardrobeSheet> {
           }).toList(),
         ),
         const SizedBox(height: 14),
-        _buildSectionTitle('4. Kragen & Outfit-Stil', palette),
+        _buildSectionTitle('6. Kragen & Outfit-Stil', palette),
         Wrap(
           spacing: 8,
           runSpacing: 8,
