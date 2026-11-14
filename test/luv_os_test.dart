@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:luv_os/core/database/luv_database.dart';
+import 'package:luv_os/core/services/gemini_yandere_brain.dart';
 import 'package:luv_os/core/services/procedural_audio_synth.dart';
 import 'package:luv_os/core/theme/cute_horror_theme.dart';
 import 'package:luv_os/data/models/emotional_vector.dart';
+import 'package:luv_os/data/models/mimi_wardrobe_models.dart';
 import 'package:luv_os/data/models/player_psych_profile.dart';
 import 'package:luv_os/data/story_graph_data.dart';
 
@@ -100,6 +102,43 @@ void main() {
       expect(phase4Palette.toThemeData().useMaterial3, isFalse);
       expect(phase1Palette.borderRadius, equals(24.0));
       expect(phase4Palette.borderRadius, lessThan(10.0));
+    });
+
+    test('V3 GeminiYandereBrain locks TikTok on rival app mention and unlocks on apology', () {
+      final brain = GeminiYandereBrain();
+      final rageDirective = brain.evaluateLocalHeuristic(
+        playerMessage: 'Ich gehe jetzt auf TikTok scrollen!',
+        corruption: 0.35,
+        affection: 0.70,
+        obsession: 0.40,
+        currentlyLocked: false,
+      );
+
+      expect(rageDirective.moodState, equals(MimiMoodState.yandereRage));
+      expect(rageDirective.systemAction.lockApps, isTrue);
+      expect(rageDirective.systemAction.blockedCategories, contains('TikTok'));
+      expect(rageDirective.systemAction.requiredHeadpatsToUnlock, greaterThan(0));
+
+      final forgiveDirective = brain.evaluateLocalHeuristic(
+        playerMessage: 'Tut mir leid Mimi, ich hab dich lieb ♡',
+        corruption: 0.35,
+        affection: 0.70,
+        obsession: 0.40,
+        currentlyLocked: true,
+      );
+
+      expect(forgiveDirective.moodState, equals(MimiMoodState.lovestruck));
+      expect(forgiveDirective.systemAction.lockApps, isFalse);
+
+      const wardrobe = MimiWardrobeLoadout(
+        hairStyle: MimiHairStyle.lavenderDream,
+        headwear: MimiHeadwear.maidFrillBand,
+        faceAccessory: MimiFaceAccessory.pinkHeartGlasses,
+        collarStyle: MimiCollarStyle.gothLoliChoker,
+      );
+      final restored = MimiWardrobeLoadout.fromJson(wardrobe.toJson());
+      expect(restored.hairStyle, equals(MimiHairStyle.lavenderDream));
+      expect(restored.headwear, equals(MimiHeadwear.maidFrillBand));
     });
   });
 }

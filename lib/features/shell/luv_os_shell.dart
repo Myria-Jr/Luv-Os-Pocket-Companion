@@ -12,8 +12,10 @@ import '../call/incoming_mimi_call_overlay.dart';
 import '../chat/chibi_chat_screen.dart';
 import '../companion/mimi_avatar_painter.dart';
 import '../diary/secret_diary_screen.dart';
+import '../guide/companion_handbook_modal.dart';
 import '../terminal/root_terminal_screen.dart';
 import '../vault/memory_vault_screen.dart';
+import '../wardrobe/mimi_wardrobe_sheet.dart';
 
 enum LuvOsTab {
   home,
@@ -244,7 +246,41 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
                   : palette.textSecondary,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: () => _openWardrobeSheet(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: palette.surfaceAlt,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.checkroom_rounded,
+                size: 16,
+                color: palette.primaryAccent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: () => _openHandbookModal(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: palette.surfaceAlt,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.help_outline_rounded,
+                size: 16,
+                color: palette.primaryAccent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
           InkWell(
             onTap: () => _openDiagnosticsSheet(context),
             borderRadius: BorderRadius.circular(8),
@@ -457,7 +493,7 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
           ),
           const SizedBox(height: 12),
 
-          // Phase & Security Keys Banner
+          // Phase, Mood & Security Keys Banner
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
@@ -472,12 +508,12 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
               children: [
                 Expanded(
                   child: Text(
-                    state.phase.displayName,
+                    '${state.phase.displayName}  •  ${state.moodState.germanLabel}',
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11.0,
                       fontWeight: FontWeight.w900,
                       color: palette.primaryAccent,
-                      letterSpacing: 0.8,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
@@ -492,7 +528,94 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+
+          // V3 Native App-Locker Warning Banner when Mimi has locked TikTok & social apps
+          if (state.appLockActive)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: CuteHorrorPalette.cyberCrimson.withAlphaFactor(0.16),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: CuteHorrorPalette.cyberCrimson,
+                  width: 1.8,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_rounded,
+                        size: 16,
+                        color: CuteHorrorPalette.cyberCrimson,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'APP-SPERRE AKTIV: ${state.blockedAppCategories.join(", ")} BLOCKIERT 💢',
+                          style: const TextStyle(
+                            color: CuteHorrorPalette.cyberCrimson,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Noch ${state.remainingHeadpatsToUnlock}× Mimis Kopf streicheln${state.requireApologyToUnlock ? " & im Chat entschuldigen" : ""}, oder ein Geschenk im Kleiderschrank überreichen!',
+                    style: TextStyle(
+                      color: palette.textPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Quick V3 Action Bar: Wardrobe & Companion Handbook
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: palette.primaryAccent,
+                    side: BorderSide(color: palette.primaryAccent, width: 1.3),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onPressed: () => _openWardrobeSheet(context),
+                  icon: const Icon(Icons.checkroom_rounded, size: 16),
+                  label: const Text(
+                    '🎀 Kleiderschrank & Geschenke',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: palette.primaryAccent,
+                    side: BorderSide(color: palette.primaryAccent, width: 1.3),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  onPressed: () => _openHandbookModal(context),
+                  icon: const Icon(Icons.menu_book_rounded, size: 16),
+                  label: const Text(
+                    '📖 Handbuch & Gemini-KI',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
 
           // Interactive Mimi-Core-Avatar Centerpiece
           const SizedBox(
@@ -983,6 +1106,24 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
           ),
         ),
       ),
+    );
+  }
+
+  void _openWardrobeSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const MimiWardrobeSheet(),
+    );
+  }
+
+  void _openHandbookModal(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const CompanionHandbookModal(),
     );
   }
 

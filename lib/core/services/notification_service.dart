@@ -123,6 +123,24 @@ class NotificationService {
     );
   }
 
+  /// Dispatches a live companion status notification when Mimi locks or unlocks
+  /// apps (e.g. TikTok) or shifts into a strong mood state.
+  Future<void> showLiveMimiStatusNotification({
+    required String message,
+    required bool isLocked,
+  }) async {
+    if (message.trim().isEmpty) return;
+    await initialize();
+    await _dispatchPlatformNotification(
+      id: 204,
+      title: isLocked
+          ? 'Mimi // APP-SPERRE AKTIV 💢'
+          : 'Mimi // LUV.OS Live-Status ♡',
+      body: message,
+      corruptionLevel: isLocked ? 0.80 : 0.15,
+    );
+  }
+
   /// Cancels all pending ghost timers and clears active notifications on resume.
   Future<void> cancelAllGhostNotifications() async {
     for (final timer in _ghostTimers) {

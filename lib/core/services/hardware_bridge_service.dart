@@ -25,6 +25,23 @@ final hardwareBridgeProvider = Provider<HardwareBridgeService>((ref) {
     corruptionProvider,
     (previous, next) {
       service.syncCorruptionLevel(next.corruptionLevel);
+      if (previous?.appLockActive != next.appLockActive ||
+          previous?.remainingHeadpatsToUnlock !=
+              next.remainingHeadpatsToUnlock) {
+        service.syncAppLockToNative(
+          locked: next.appLockActive,
+          blockedCategories: next.blockedAppCategories,
+          reason: next.liveLockBannerText,
+          requiredHeadpats: next.remainingHeadpatsToUnlock,
+        );
+      }
+      if (next.pendingLiveNotification.isNotEmpty &&
+          previous?.pendingLiveNotification != next.pendingLiveNotification) {
+        notificationService.showLiveMimiStatusNotification(
+          message: next.pendingLiveNotification,
+          isLocked: next.appLockActive,
+        );
+      }
     },
   );
 
@@ -43,6 +60,8 @@ class HardwareBridgeService with WidgetsBindingObserver {
 
   final Battery _battery = Battery();
   final Stopwatch _monotonicWatch = Stopwatch();
+  static const MethodChannel _nativeChannel =
+      MethodChannel('luv.os/hardware_bridge');
   DateTime _wallClockAnchor = DateTime.now();
 
   Timer? _systemMonitorTimer;
@@ -94,6 +113,16 @@ class HardwareBridgeService with WidgetsBindingObserver {
     }
 
     await notificationService.initialize();
+
+    _nativeChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onBlockedAppIntercepted') {
+        final args = call.arguments;
+        if (args is Map) {
+          final category = (args['category'] ?? 'TikTok').toString();
+          await corruptionController.recordInterceptedAppAttempt(category);
+        }
+      }
+    });
 
     _wallClockAnchor = DateTime.now();
     _monotonicWatch
@@ -435,6 +464,47 @@ class HardwareBridgeService with WidgetsBindingObserver {
     _isDeviceSteady = degX.abs() < 12.0 && degY.abs() < 12.0;
     await triggerCuteTapHaptic();
     await _pushHardwareSnapshot();
+  }
+
+  /// Synchronizes Mimi's V3 App-Locker state with the native Android UsageStats watchdog.
+  Future<void> syncAppLockToNative({
+    required bool locked,
+    required List<String> blockedCategories,
+    required String reason,
+    required int requiredHeadpats,
+  }) async {
+    try {
+      await _nativeChannel.invokeMethod<bool>('setAppLockState', {
+        'locked': locked,
+        'blockedCategories': blockedCategories,
+        'reason': reason,
+        'requiredHeadpats': requiredHeadpats,
+      });
+    } catch (_) {
+      // Ignored on desktop/web test targets.
+    }
+  }
+
+  /// Checks whether the user has granted Android Usage Access (`PACKAGE_USAGE_STATS`)
+  /// so Mimi can intercept TikTok/Instagram/YouTube in real time.
+  Future<bool> checkUsageStatsPermission() async {
+    try {
+      final granted =
+          await _nativeChannel.invokeMethod<bool>('checkUsageStatsPermission');
+      return granted ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens Android's Usage Access settings page so the player can grant Mimi
+  /// foreground app interception privileges.
+  Future<void> openUsageStatsSettings() async {
+    try {
+      await _nativeChannel.invokeMethod<bool>('openUsageStatsSettings');
+    } catch (_) {
+      // Ignored on non-Android platforms.
+    }
   }
 
   void dispose() {

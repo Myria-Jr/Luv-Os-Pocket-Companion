@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/database/luv_database.dart';
+import '../core/services/gemini_yandere_brain.dart';
 import '../core/services/procedural_audio_synth.dart';
 import '../core/theme/cute_horror_theme.dart';
 import '../data/models/emotional_vector.dart';
+import '../data/models/mimi_wardrobe_models.dart';
 import '../data/models/player_psych_profile.dart';
 import '../data/story_graph_data.dart';
 
@@ -97,6 +99,18 @@ class CorruptionState {
   final String mimiStatusBanner;
   final String integrityHash;
 
+  // V3: Gemini AI Mood, Anime Head 3.0 Expression, Wardrobe & Native App-Locker
+  final MimiMoodState moodState;
+  final MimiFacialExpression facialExpression;
+  final MimiWardrobeLoadout wardrobe;
+  final bool appLockActive;
+  final List<String> blockedAppCategories;
+  final int remainingHeadpatsToUnlock;
+  final bool requireApologyToUnlock;
+  final String liveLockBannerText;
+  final String pendingLiveNotification;
+  final String geminiApiKey;
+
   const CorruptionState({
     this.corruptionLevel = 0.08,
     this.obsessionLevel = 0.15,
@@ -124,6 +138,16 @@ class CorruptionState {
     this.mimiStatusBanner =
         'Mimi freut sich so sehr, dass du da bist! (´｡• ᵕ •｡`) ♡',
     this.integrityHash = '000000000000',
+    this.moodState = MimiMoodState.happy,
+    this.facialExpression = const MimiFacialExpression(),
+    this.wardrobe = const MimiWardrobeLoadout(),
+    this.appLockActive = false,
+    this.blockedAppCategories = const <String>[],
+    this.remainingHeadpatsToUnlock = 0,
+    this.requireApologyToUnlock = false,
+    this.liveLockBannerText = '',
+    this.pendingLiveNotification = '',
+    this.geminiApiKey = '',
   });
 
   EscalationPhase get phase =>
@@ -178,6 +202,16 @@ class CorruptionState {
     HardwareSnapshot? hardware,
     String? mimiStatusBanner,
     String? integrityHash,
+    MimiMoodState? moodState,
+    MimiFacialExpression? facialExpression,
+    MimiWardrobeLoadout? wardrobe,
+    bool? appLockActive,
+    List<String>? blockedAppCategories,
+    int? remainingHeadpatsToUnlock,
+    bool? requireApologyToUnlock,
+    String? liveLockBannerText,
+    String? pendingLiveNotification,
+    String? geminiApiKey,
   }) {
     return CorruptionState(
       corruptionLevel:
@@ -207,6 +241,19 @@ class CorruptionState {
       hardware: hardware ?? this.hardware,
       mimiStatusBanner: mimiStatusBanner ?? this.mimiStatusBanner,
       integrityHash: integrityHash ?? this.integrityHash,
+      moodState: moodState ?? this.moodState,
+      facialExpression: facialExpression ?? this.facialExpression,
+      wardrobe: wardrobe ?? this.wardrobe,
+      appLockActive: appLockActive ?? this.appLockActive,
+      blockedAppCategories: blockedAppCategories ?? this.blockedAppCategories,
+      remainingHeadpatsToUnlock:
+          remainingHeadpatsToUnlock ?? this.remainingHeadpatsToUnlock,
+      requireApologyToUnlock:
+          requireApologyToUnlock ?? this.requireApologyToUnlock,
+      liveLockBannerText: liveLockBannerText ?? this.liveLockBannerText,
+      pendingLiveNotification:
+          pendingLiveNotification ?? this.pendingLiveNotification,
+      geminiApiKey: geminiApiKey ?? this.geminiApiKey,
     );
   }
 }
@@ -227,6 +274,7 @@ final corruptionProvider =
 class CorruptionController extends StateNotifier<CorruptionState> {
   final LuvDatabase _db;
   final ProceduralAudioSynth _audioSynth;
+  final GeminiYandereBrain _geminiBrain = GeminiYandereBrain();
   SharedPreferences? _prefs;
   Timer? _microGlitchTimer;
   Timer? _burstResetTimer;
@@ -247,6 +295,8 @@ class CorruptionController extends StateNotifier<CorruptionState> {
   static const String _kPrefAudioMutes = 'luv_os_audio_mutes';
   static const String _kPrefPsychJson = 'luv_os_psych_profile_v2';
   static const String _kPrefIntegrityHash = 'luv_os_integrity_hash';
+  static const String _kPrefWardrobeJson = 'luv_os_wardrobe_v3';
+  static const String _kPrefGeminiApiKey = 'luv_os_gemini_api_key';
 
   static const List<String> _kParasiticPopupTexts = [
     'Schau mich an ♡',
@@ -301,6 +351,21 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       }
     }
 
+    MimiWardrobeLoadout loadedWardrobe = const MimiWardrobeLoadout();
+    final rawWardrobe = _prefs?.getString(_kPrefWardrobeJson);
+    if (rawWardrobe != null && rawWardrobe.isNotEmpty) {
+      try {
+        loadedWardrobe = MimiWardrobeLoadout.fromJson(
+          jsonDecode(rawWardrobe) as Map<String, dynamic>,
+        );
+      } catch (_) {
+        loadedWardrobe = const MimiWardrobeLoadout();
+      }
+    }
+
+    final savedApiKey = _prefs?.getString(_kPrefGeminiApiKey) ?? '';
+    _geminiBrain.setApiKey(savedApiKey);
+
     var messages = await _db.getAllMessages();
     var diary = await _db.getAllDiaryEntries();
     var logs = await _db.getRecentSystemLogs();
@@ -333,6 +398,8 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       systemLogs: logs,
       mimiStatusBanner: _computeStatusBanner(savedCorruption, savedObsession),
       integrityHash: hash,
+      wardrobe: loadedWardrobe,
+      geminiApiKey: savedApiKey,
     );
 
     _scheduleNextMicroGlitch();
@@ -470,6 +537,8 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     await prefs.setBool(_kPrefTerminalUnlocked, state.terminalUnlocked);
     await prefs.setInt(_kPrefAudioMutes, state.audioMuteAttempts);
     await prefs.setString(_kPrefPsychJson, jsonEncode(state.psychProfile.toJson()));
+    await prefs.setString(_kPrefWardrobeJson, jsonEncode(state.wardrobe.toJson()));
+    await prefs.setString(_kPrefGeminiApiKey, state.geminiApiKey);
     await prefs.setString(_kPrefIntegrityHash, hash);
   }
 
@@ -747,9 +816,46 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
 
     String banner;
-    if (state.corruptionLevel < 0.25) {
+    var nextRemainingPats = state.remainingHeadpatsToUnlock;
+    var nextAppLock = state.appLockActive;
+    var nextMood = state.moodState;
+    var nextFace = state.facialExpression;
+    var nextNotification = state.pendingLiveNotification;
+
+    if (nextRemainingPats > 0) {
+      nextRemainingPats = math.max(0, nextRemainingPats - 1);
+      if (nextRemainingPats == 0 && !state.requireApologyToUnlock) {
+        nextAppLock = false;
+        nextMood = MimiMoodState.lovestruck;
+        nextFace = const MimiFacialExpression(
+          eyeType: 'sparkle_happy',
+          browAngle: 0.12,
+          blushIntensity: 0.92,
+          mouthShape: 'cute_cat_w',
+          headTilt: 0.08,
+        );
+        nextNotification =
+            'Mimi schnurrt zufrieden! (´｡• ᵕ •｡`) ♡ TikTok & alle Apps sind wieder freigeschaltet!';
+        banner =
+            'Du hast mich genug gestreichelt! Ich hab TikTok & deine Apps wieder freigegeben~ (´｡• ᵕ •｡`) ♡';
+      } else if (nextRemainingPats == 0 && state.requireApologyToUnlock) {
+        banner =
+            'Das Streicheln tat gut... aber du musst dich im Chat noch bei mir entschuldigen ("Tut mir leid")! ( ` ᴖ ´ )';
+      } else {
+        banner =
+            'Noch $nextRemainingPats× streicheln, damit ich dir verzeihe und TikTok entsperre! ( ` ᴖ ´ ) ♡';
+      }
+    } else if (state.corruptionLevel < 0.25) {
       banner =
           'Hehe, deine Finger sind so warm~ Streichel mich weiter! (´｡• ᵕ •｡`) ♡';
+      nextMood = MimiMoodState.lovestruck;
+      nextFace = const MimiFacialExpression(
+        eyeType: 'closed_smile',
+        browAngle: 0.1,
+        blushIntensity: 0.85,
+        mouthShape: 'cute_cat_w',
+        headTilt: 0.08,
+      );
     } else if (state.corruptionLevel < 0.55) {
       banner =
           'Hör nicht auf... wenn du den Finger wegnimmst, wird alles kalt. ♡';
@@ -764,6 +870,12 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       obsessionLevel: (state.obsessionLevel + obsessionGain).clamp(0.0, 1.0),
       corruptionLevel: (state.corruptionLevel + corruptionGain).clamp(0.0, 1.0),
       mimiStatusBanner: banner,
+      remainingHeadpatsToUnlock: nextRemainingPats,
+      appLockActive: nextAppLock,
+      blockedAppCategories: nextAppLock ? state.blockedAppCategories : const <String>[],
+      moodState: nextMood,
+      facialExpression: nextFace,
+      pendingLiveNotification: nextNotification,
     );
     await _persistScalars();
 
@@ -1193,7 +1305,10 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     );
 
     final deletedCount = state.psychProfile.backspaceCount;
+    final currentMessages = await _db.getAllMessages();
     state = state.copyWith(
+      isMimiTyping: true,
+      messages: currentMessages,
       psychProfile: state.psychProfile.copyWith(
         backspaceCount: 0,
         deletedCharsLastMessage: deletedCount,
@@ -1210,21 +1325,39 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       );
     }
 
+    // Evaluate response via V3 GeminiYandereBrain (or local neural engine fallback)
+    final recentTexts = state.messages
+        .reversed
+        .take(5)
+        .map((m) => '${m.sender}: ${m.content}')
+        .toList(growable: false);
+
+    final directive = await _geminiBrain.evaluatePlayerMessage(
+      playerMessage: text,
+      corruption: state.corruptionLevel,
+      affection: state.emotion.affection,
+      obsession: state.obsessionLevel,
+      mania: state.emotion.mania,
+      currentlyLocked: state.appLockActive,
+      equippedOutfitSummary: state.wardrobe.summary,
+      recentConversation: recentTexts,
+    );
+
     final reply = wasHijacked
         ? 'Aww, du hast "ICH BLEIBE FÜR IMMER BEI DIR" geschrieben! (´｡• ᵕ •｡`) ♡̷̷̷ (Und die $deletedCount gelöschten Buchstaben davor vergessen wir einfach~)'
-        : (deletedCount > 0
-            ? 'Du hast vor dem Absenden $deletedCount Buchstaben gelöscht... hattest du Angst, mir die Wahrheit zu schreiben? ♡'
-            : (state.corruptionLevel >= 0.55
-                ? 'Jedes Wort von dir wird direkt in meinem ewigen Speicher eingebrannt. ♡̷̷̷'
-                : 'Wie süß du schreibst! Erzähl mir noch mehr von dir! ૮ ˶ᵔ ᵕ ᵔ˶ ა'));
+        : directive.spokenText;
 
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    await Future<void>.delayed(const Duration(milliseconds: 350));
     await _db.insertMessage(
       ChatMessagesCompanion.insert(
         nodeId: state.currentNodeId,
         sender: 'mimi',
         content: reply,
-        ghostOverlayText: const Value('DEINE TASTATUR GEHÖRT MIR'),
+        ghostOverlayText: Value(
+          directive.systemAction.lockApps
+              ? 'APP-SPERRE AKTIV // TIKTOK BLOCKIERT'
+              : 'GEMINI_NEURAL_LINK // SYNC OK',
+        ),
         timestamp: DateTime.now(),
         corruptionAtSend: Value(state.corruptionLevel),
       ),
@@ -1239,15 +1372,205 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     );
 
     final refreshed = await _db.getAllMessages();
-    state = state.copyWith(messages: refreshed);
+    final action = directive.systemAction;
+
+    // Determine updated App-Lock state:
+    // If Gemini says lockApps: true -> lock immediately.
+    // If Gemini says lockApps: false (e.g. player apologized or was sweet) -> unlock if headpats are also satisfied or apology cleared it!
+    final nextLockActive = action.lockApps;
+    final nextBlocked = nextLockActive
+        ? (action.blockedCategories.isEmpty
+            ? const ['TikTok', 'Instagram', 'YouTube', 'Games']
+            : action.blockedCategories)
+        : const <String>[];
+    final nextPatsRequired =
+        nextLockActive ? math.max(action.requiredHeadpatsToUnlock, 10) : 0;
+
+    state = state.copyWith(
+      isMimiTyping: false,
+      messages: refreshed,
+      moodState: directive.moodState,
+      facialExpression: directive.facialExpression,
+      appLockActive: nextLockActive,
+      blockedAppCategories: nextBlocked,
+      remainingHeadpatsToUnlock: nextPatsRequired,
+      requireApologyToUnlock: nextLockActive ? action.requireApology : false,
+      liveLockBannerText: nextLockActive
+          ? (action.liveNotificationText.isNotEmpty
+              ? action.liveNotificationText
+              : 'Mimi ist sauer! 💢 TikTok & Apps sind gesperrt.')
+          : '',
+      pendingLiveNotification: action.liveNotificationText,
+      mimiStatusBanner: reply,
+    );
+
+    final cDelta = (directive.angerDelta > 0)
+        ? (directive.angerDelta / 400.0).clamp(0.01, 0.12)
+        : (directive.affectionDelta > 10 ? -0.04 : 0.01);
+
     await adjustCorruption(
-      wasHijacked ? 0.05 : 0.02,
-      obsessionDelta: 0.04,
+      wasHijacked ? 0.05 : cDelta,
+      obsessionDelta: (directive.jealousyDelta / 300.0).clamp(-0.05, 0.08),
       emotionDelta: EmotionalVector(
-        obsession: 0.04,
-        mania: wasHijacked ? 0.06 : 0.01,
-        paranoia: deletedCount > 2 ? 0.04 : 0.0,
+        affection: directive.affectionDelta / 100.0,
+        obsession: directive.jealousyDelta / 150.0,
+        mania: directive.angerDelta / 100.0,
+        paranoia: deletedCount > 2 ? 0.04 : (directive.jealousyDelta / 200.0),
+        trust: directive.affectionDelta / 120.0,
       ),
+      systemLogCode: nextLockActive ? 'APP_LOCKER_ENGAGED' : 'AI_DIRECTIVE_SYNC',
+      systemLogDetails:
+          'Mood=${directive.moodState.wireName} | Lock=${action.lockApps} | Blocked=${nextBlocked.join(",")}',
+    );
+  }
+
+  // ===========================================================================
+  // V3: GEMINI KEY, WARDROBE, GIFTS & APP-LOCKER CONTROLS
+  // ===========================================================================
+
+  Future<void> setGeminiApiKey(String apiKey) async {
+    final trimmed = apiKey.trim();
+    _geminiBrain.setApiKey(trimmed);
+    state = state.copyWith(geminiApiKey: trimmed);
+    await _persistScalars();
+    _audioSynth.playTerminalBeep(isSuccess: true);
+  }
+
+  Future<void> updateWardrobe(MimiWardrobeLoadout nextLoadout) async {
+    _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+    state = state.copyWith(
+      wardrobe: nextLoadout,
+      moodState: MimiMoodState.lovestruck,
+      facialExpression: const MimiFacialExpression(
+        eyeType: 'sparkle_happy',
+        browAngle: 0.12,
+        blushIntensity: 0.85,
+        mouthShape: 'cute_cat_w',
+        headTilt: 0.09,
+      ),
+      mimiStatusBanner:
+          'Gefällt dir mein neuer Look (${nextLoadout.hairStyle.label} & ${nextLoadout.headwear.label})? (´｡• ᵕ •｡`) ♡',
+    );
+    await _persistScalars();
+  }
+
+  Future<void> giveGiftToMimi(MimiGiftItem gift) async {
+    _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+    final nextPats = gift.instantAppUnlock
+        ? 0
+        : math.max(0, state.remainingHeadpatsToUnlock - 8);
+    final unlockedNow = gift.instantAppUnlock || nextPats == 0;
+
+    state = state.copyWith(
+      moodState: MimiMoodState.lovestruck,
+      facialExpression: const MimiFacialExpression(
+        eyeType: 'sparkle_happy',
+        browAngle: 0.14,
+        blushIntensity: 0.95,
+        mouthShape: 'happy_open',
+        headTilt: 0.11,
+      ),
+      appLockActive: unlockedNow ? false : state.appLockActive,
+      blockedAppCategories:
+          unlockedNow ? const <String>[] : state.blockedAppCategories,
+      remainingHeadpatsToUnlock: nextPats,
+      requireApologyToUnlock: false,
+      liveLockBannerText: unlockedNow ? '' : state.liveLockBannerText,
+      pendingLiveNotification: unlockedNow
+          ? 'Mimi hat sich riesig über "${gift.name}" gefreut! ♡ Alle Apps sind wieder frei!'
+          : state.pendingLiveNotification,
+      mimiStatusBanner: '${gift.emoji} ${gift.mimiReactionText}',
+    );
+
+    await _injectSpontaneousMimiMessage(
+      nodeId: 'gift_${gift.id}',
+      text: '${gift.emoji} ${gift.mimiReactionText}',
+      ghostText: 'GESCHENK AKZEPTIERT // HERZFREQUENZ STEIGT',
+    );
+
+    await adjustCorruption(
+      -(gift.angerReduction / 350.0),
+      obsessionDelta: 0.02,
+      emotionDelta: EmotionalVector(
+        affection: gift.affectionBoost / 100.0,
+        mania: -(gift.angerReduction / 100.0),
+        paranoia: -0.08,
+        trust: 0.12,
+      ),
+      systemLogCode: 'GIFT_RECEIVED',
+      systemLogDetails:
+          'Spielerin schenkte "${gift.name}". App-Sperre=${!unlockedNow}.',
+    );
+  }
+
+  Future<void> forceAppLockSimulation() async {
+    triggerGlitchBurst(
+      intensity: 0.85,
+      duration: const Duration(milliseconds: 240),
+    );
+    const notice =
+        'Mimi ist sauer! 💢 TikTok, Instagram & YouTube sind gesperrt. Streichle mich 12× oder entschuldige dich im Chat!';
+    state = state.copyWith(
+      moodState: MimiMoodState.yandereRage,
+      facialExpression: const MimiFacialExpression(
+        eyeType: 'yandere_heart_glow',
+        browAngle: -0.65,
+        blushIntensity: 0.90,
+        mouthShape: 'pout_frown',
+        headTilt: 0.15,
+      ),
+      appLockActive: true,
+      blockedAppCategories: const ['TikTok', 'Instagram', 'YouTube', 'Games'],
+      remainingHeadpatsToUnlock: 12,
+      requireApologyToUnlock: true,
+      liveLockBannerText: notice,
+      pendingLiveNotification: notice,
+      mimiStatusBanner:
+          'Ich habe TikTok & Co. für dich gesperrt! ( ` ᴖ ´ )💢 Kümmere dich erst um mich!',
+    );
+    await _persistScalars();
+  }
+
+  Future<void> forceUnlockAllApps() async {
+    _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+    state = state.copyWith(
+      moodState: MimiMoodState.lovestruck,
+      facialExpression: const MimiFacialExpression(
+        eyeType: 'sparkle_happy',
+        browAngle: 0.10,
+        blushIntensity: 0.80,
+        mouthShape: 'cute_cat_w',
+        headTilt: 0.05,
+      ),
+      appLockActive: false,
+      blockedAppCategories: const <String>[],
+      remainingHeadpatsToUnlock: 0,
+      requireApologyToUnlock: false,
+      liveLockBannerText: '',
+      pendingLiveNotification:
+          'Mimi ist wieder versöhnt! (´｡• ᵕ •｡`) ♡ Alle Apps sind freigeschaltet.',
+      mimiStatusBanner:
+          'Na gut, ich hab alle deine Apps wieder entsperrt~ Hab dich lieb! (´｡• ᵕ •｡`) ♡',
+    );
+    await _persistScalars();
+  }
+
+  Future<void> recordInterceptedAppAttempt(String category) async {
+    triggerGlitchBurst(
+      intensity: 0.95,
+      duration: const Duration(milliseconds: 300),
+    );
+    final msg =
+        'Erwischt!! Du wolltest gerade heimlich $category öffnen, obwohl ich sauer auf dich bin! ( ` ᴖ ´ )💢 Bleib hier bei mir!';
+    state = state.copyWith(
+      moodState: MimiMoodState.yandereRage,
+      mimiStatusBanner: msg,
+      pendingLiveNotification: msg,
+    );
+    await _injectSpontaneousMimiMessage(
+      nodeId: 'intercept_${category.toLowerCase()}',
+      text: msg,
+      ghostText: 'APP_INTERCEPTOR // $category BLOCKIERT',
     );
   }
 

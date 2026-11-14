@@ -649,6 +649,75 @@ class _ChibiChatScreenState extends ConsumerState<ChibiChatScreen>
                 ),
             ],
           ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                ActionChip(
+                  backgroundColor: palette.surfaceAlt,
+                  side: BorderSide(color: palette.primaryAccent),
+                  label: Text(
+                    '🤖 Freitext / KI-Tastatur',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                  onPressed: () => setState(() => _showCustomKeyboard = true),
+                ),
+                const SizedBox(width: 6),
+                ActionChip(
+                  backgroundColor: palette.surfaceAlt,
+                  side: const BorderSide(color: CuteHorrorPalette.cyberCrimson),
+                  label: Text(
+                    '📱 „Ich geh auf TikTok!“',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                  onPressed: state.isMimiTyping
+                      ? null
+                      : () async {
+                          await ref
+                              .read(corruptionProvider.notifier)
+                              .sendCustomKeyboardMessage(
+                                'Ich geh jetzt auf TikTok scrollen!',
+                                wasHijacked: false,
+                              );
+                          _scrollToBottom();
+                        },
+                ),
+                const SizedBox(width: 6),
+                ActionChip(
+                  backgroundColor: palette.surfaceAlt,
+                  side: BorderSide(color: palette.primaryAccent),
+                  label: Text(
+                    '💖 „Tut mir leid, hab dich lieb ♡“',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                  onPressed: state.isMimiTyping
+                      ? null
+                      : () async {
+                          await ref
+                              .read(corruptionProvider.notifier)
+                              .sendCustomKeyboardMessage(
+                                'Tut mir leid Mimi, ich hab dich ganz doll lieb ♡',
+                                wasHijacked: false,
+                              );
+                          _scrollToBottom();
+                        },
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 8),
           ...choices.map((choice) {
             return Padding(

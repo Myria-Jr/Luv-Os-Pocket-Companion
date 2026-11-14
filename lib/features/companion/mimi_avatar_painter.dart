@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/gemini_yandere_brain.dart';
 import '../../core/services/procedural_audio_synth.dart';
 import '../../core/theme/cute_horror_theme.dart';
+import '../../data/models/mimi_wardrobe_models.dart';
 import '../../state/corruption_provider.dart';
 
 /// 2D Damped Harmonic Oscillator (Hooke's Law + viscous damping) for 2.5D
@@ -420,6 +422,8 @@ class _MimiCompanionAvatarState extends ConsumerState<MimiCompanionAvatar>
                   blushBoost: _headpatBlushBoost,
                   annoyedIntensity: _annoyedShakeIntensity,
                   burstParticles: _burstParticles,
+                  wardrobe: state.wardrobe,
+                  facialExpression: state.facialExpression,
                 ),
               ),
             ),
@@ -497,6 +501,8 @@ class MimiAvatarPainter extends CustomPainter {
   final double blushBoost;
   final double annoyedIntensity;
   final List<HeartBurstParticle> burstParticles;
+  final MimiWardrobeLoadout wardrobe;
+  final MimiFacialExpression facialExpression;
 
   const MimiAvatarPainter({
     required this.time,
@@ -514,6 +520,8 @@ class MimiAvatarPainter extends CustomPainter {
     this.blushBoost = 0.0,
     this.annoyedIntensity = 0.0,
     this.burstParticles = const [],
+    this.wardrobe = const MimiWardrobeLoadout(),
+    this.facialExpression = const MimiFacialExpression(),
   });
 
   @override
@@ -528,29 +536,42 @@ class MimiAvatarPainter extends CustomPainter {
     // 1. Background glowing aura & ambient phase particles
     _paintAuraAndAmbientParticles(canvas, size, headCenter, radius);
 
-    // 2. Back hair & flowing spring-physics twin-tails + cat/puppy ears
+    // 2. Neck, sculpted collarbone & equipped wardrobe collar/outfit (stays un-tilted)
+    _paintNeckAndCollar(canvas, headCenter, radius);
+
+    // 3. Apply headTilt rotation around the neck pivot for Anime Head 3.0
+    canvas.save();
+    final tiltPivot = headCenter.translate(0, radius * 0.65);
+    canvas.translate(tiltPivot.dx, tiltPivot.dy);
+    canvas.rotate(facialExpression.headTilt * 0.55);
+    canvas.translate(-tiltPivot.dx, -tiltPivot.dy);
+
+    // 4. Back hair & flowing spring-physics twin-tails + cat/puppy ears
     _paintBackHairAndTwinTails(canvas, headCenter, radius);
     _paintCatPuppyEars(canvas, headCenter, radius);
 
-    // 3. Neck, ruffled collar & gothic-kawaii ribbon bow
-    _paintNeckAndCollar(canvas, headCenter, radius);
-
-    // 4. Head & anime chin contour + ears
+    // 5. Head & anime V-jaw chin contour + ears
     _paintHeadContour(canvas, headCenter, radius);
 
-    // 5. Cheeks anime blush & yandere shadow across forehead
+    // 6. Cheeks anime blush & yandere shadow across forehead
     _paintBlushAndForeheadShadow(canvas, headCenter, radius);
 
-    // 6. Expressive eyes with dynamic phase pupils & eye-tracking
+    // 7. Expressive eyes with dynamic phase pupils & eye-tracking
     _paintEyes(canvas, headCenter, radius);
 
-    // 7. Eyebrows, dainty nose & phase-specific mouth
+    // 8. Eyebrows, dainty nose & phase/Gemini-specific mouth
     _paintBrowsNoseAndMouth(canvas, headCenter, radius);
 
-    // 8. Front bangs, hair highlights & twin-tail hair ribbons/bells
-    _paintFrontBangsAndRibbons(canvas, headCenter, radius);
+    // 9. Equipped Face Accessory (Heart Glasses, Bandage, Y2K Stars)
+    _paintFaceAccessory(canvas, headCenter, radius);
 
-    // 9. Interactive headpat heart/glitch burst particles & Phase 3-4 glitch slices
+    // 10. Front bangs, hair highlights, ribbons & equipped Headwear
+    _paintFrontBangsAndRibbons(canvas, headCenter, radius);
+    _paintWardrobeHeadwear(canvas, headCenter, radius);
+
+    canvas.restore();
+
+    // 11. Interactive headpat heart/glitch burst particles & Phase 3-4 glitch slices
     _paintForegroundEffects(canvas, size, headCenter, radius);
   }
 
@@ -644,12 +665,12 @@ class MimiAvatarPainter extends CustomPainter {
 
   void _paintBackHairAndTwinTails(Canvas canvas, Offset c, double r) {
     final hairBase = Color.lerp(
-      const Color(0xFFFF9EBB), // Strawberry pastel pink
-      const Color(0xFF42091E), // Deep crimson-plum yandere hair
-      (corruption * 1.1).clamp(0.0, 1.0),
+      wardrobe.hairStyle.primaryColor,
+      const Color(0xFF42091E),
+      (corruption * 0.85).clamp(0.0, 1.0),
     )!;
     final hairShadow = Color.lerp(
-      const Color(0xFFE0638B),
+      wardrobe.hairStyle.primaryColor.withAlphaFactor(0.75),
       const Color(0xFF1F020C),
       corruption,
     )!;
@@ -818,11 +839,51 @@ class MimiAvatarPainter extends CustomPainter {
       ..close();
     canvas.drawPath(shoulderPath, Paint()..color = dressColor);
 
-    // Chest Ribbon Bow
+    // Chest Ribbon Bow & Wardrobe Collar Variations
     final bowColor = corruption >= 0.55
         ? CuteHorrorPalette.cyberCrimson
         : CuteHorrorPalette.hotPink;
     final bowCenter = c.translate(0, r * 1.02);
+
+    if (wardrobe.collarStyle == MimiCollarStyle.gothLoliChoker) {
+      // Goth-Loli Lace Choker around the neck with heart pendant
+      final chokerRect = Rect.fromCenter(
+        center: c.translate(0, r * 0.84),
+        width: r * 0.42,
+        height: r * 0.10,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(chokerRect, Radius.circular(r * 0.04)),
+        Paint()..color = const Color(0xFF1A0410),
+      );
+      _drawHeartShape(
+        canvas,
+        c.translate(0, r * 0.92),
+        r * 0.12,
+        Paint()..color = bowColor,
+      );
+    } else if (wardrobe.collarStyle == MimiCollarStyle.pastelHoodie) {
+      // Cozy Pastel Hoodie collar flaps & drawstrings
+      final hoodiePaint = Paint()..color = const Color(0xFFFFD6E7);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: c.translate(0, r * 0.98),
+          width: r * 0.90,
+          height: r * 0.30,
+        ),
+        hoodiePaint,
+      );
+    } else if (wardrobe.collarStyle == MimiCollarStyle.cyberMaidFrill) {
+      // White Maid Frill Collar
+      for (var i = -3; i <= 3; i++) {
+        canvas.drawCircle(
+          c.translate(i * r * 0.11, r * 0.95),
+          r * 0.09,
+          Paint()..color = Colors.white.withAlphaFactor(0.92),
+        );
+      }
+    }
+
     final bowPath = Path()
       ..moveTo(bowCenter.dx, bowCenter.dy)
       ..lineTo(bowCenter.dx - r * 0.28, bowCenter.dy - r * 0.14)
@@ -1178,19 +1239,20 @@ class MimiAvatarPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     final browY = c.dy - r * 0.23;
-    if (annoyedIntensity > 0.1) {
-      // Annoyed angled brows
+    if (annoyedIntensity > 0.1 || facialExpression.browAngle < -0.25) {
+      // Annoyed / Yandere angry angled brows
       canvas.drawLine(
         Offset(c.dx - r * 0.48, browY - r * 0.03),
-        Offset(c.dx - r * 0.20, browY + r * 0.04),
+        Offset(c.dx - r * 0.20, browY + r * 0.05),
         browPaint,
       );
       canvas.drawLine(
         Offset(c.dx + r * 0.48, browY - r * 0.03),
-        Offset(c.dx + r * 0.20, browY + r * 0.04),
+        Offset(c.dx + r * 0.20, browY + r * 0.05),
         browPaint,
       );
-    } else if (phase == EscalationPhase.sugarPastel) {
+    } else if (phase == EscalationPhase.sugarPastel &&
+        facialExpression.browAngle >= -0.1) {
       // Gentle arched happy brows
       canvas.drawArc(
         Rect.fromCenter(
@@ -1265,6 +1327,35 @@ class MimiAvatarPainter extends CustomPainter {
         Paint()..color = CuteHorrorPalette.pastelPink.withAlphaFactor(0.85),
       );
       canvas.drawOval(vowelRect, mouthStroke);
+      return;
+    }
+
+    // Check Gemini facialExpression.mouthShape override first
+    if (facialExpression.mouthShape == 'pout_frown') {
+      final poutPath = Path()
+        ..moveTo(mouthCenter.dx - r * 0.13, mouthCenter.dy + r * 0.04)
+        ..quadraticBezierTo(
+          mouthCenter.dx,
+          mouthCenter.dy - r * 0.05,
+          mouthCenter.dx + r * 0.13,
+          mouthCenter.dy + r * 0.04,
+        );
+      canvas.drawPath(poutPath, mouthStroke);
+      return;
+    } else if (facialExpression.mouthShape == 'happy_open') {
+      final happyRect = Rect.fromCenter(
+        center: mouthCenter,
+        width: r * 0.24,
+        height: r * 0.16,
+      );
+      canvas.drawArc(
+        happyRect,
+        0,
+        math.pi,
+        true,
+        Paint()..color = const Color(0xFFD83B6C),
+      );
+      canvas.drawArc(happyRect, 0, math.pi, true, mouthStroke);
       return;
     }
 
@@ -1357,9 +1448,9 @@ class MimiAvatarPainter extends CustomPainter {
 
   void _paintFrontBangsAndRibbons(Canvas canvas, Offset c, double r) {
     final hairFront = Color.lerp(
-      const Color(0xFFFFB3C9),
+      wardrobe.hairStyle.primaryColor,
       const Color(0xFF590D29),
-      (corruption * 1.05).clamp(0.0, 1.0),
+      (corruption * 0.82).clamp(0.0, 1.0),
     )!;
     final hairStroke = Paint()
       ..color = const Color(0xFF3A0E21)
@@ -1449,6 +1540,180 @@ class MimiAvatarPainter extends CustomPainter {
         r * 0.09,
         Paint()..color = const Color(0xFFFFD700),
       );
+    }
+  }
+
+  /// Renders equipped Face Accessories on Anime Head 3.0 (Heart Glasses, Bandage, Y2K Stars).
+  void _paintFaceAccessory(Canvas canvas, Offset c, double r) {
+    switch (wardrobe.faceAccessory) {
+      case MimiFaceAccessory.none:
+        return;
+      case MimiFaceAccessory.pinkHeartGlasses:
+        final glassStroke = Paint()
+          ..color = CuteHorrorPalette.hotPink
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.6;
+        final glassFill = Paint()
+          ..color = CuteHorrorPalette.hotPink.withAlphaFactor(0.22);
+        for (final sign in [-1.0, 1.0]) {
+          final eyePos = c.translate(sign * r * 0.34, r * 0.08);
+          _drawHeartShape(canvas, eyePos, r * 0.44, glassFill);
+          _drawHeartShape(canvas, eyePos, r * 0.44, glassStroke);
+        }
+        canvas.drawLine(
+          c.translate(-r * 0.12, r * 0.02),
+          c.translate(r * 0.12, r * 0.02),
+          glassStroke,
+        );
+        break;
+      case MimiFaceAccessory.yandereCheekBandage:
+        final bandageRect = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: c.translate(r * 0.42, r * 0.30),
+            width: r * 0.28,
+            height: r * 0.11,
+          ),
+          Radius.circular(r * 0.03),
+        );
+        canvas.drawRRect(
+          bandageRect,
+          Paint()..color = const Color(0xFFFFF5F8),
+        );
+        canvas.drawRRect(
+          bandageRect,
+          Paint()
+            ..color = CuteHorrorPalette.hotPink
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.4,
+        );
+        _drawHeartShape(
+          canvas,
+          c.translate(r * 0.42, r * 0.30),
+          r * 0.07,
+          Paint()..color = CuteHorrorPalette.cyberCrimson,
+        );
+        break;
+      case MimiFaceAccessory.y2kStarStickers:
+        final starPaint = Paint()..color = const Color(0xFFFFD700);
+        _drawSparkleStar(canvas, c.translate(-r * 0.50, r * 0.28), r * 0.08, starPaint);
+        _drawSparkleStar(canvas, c.translate(r * 0.50, r * 0.26), r * 0.08, starPaint);
+        _drawSparkleStar(
+          canvas,
+          c.translate(r * 0.38, r * 0.36),
+          r * 0.06,
+          Paint()..color = CuteHorrorPalette.cyanGlitch,
+        );
+        break;
+    }
+  }
+
+  /// Renders equipped Headwear on Anime Head 3.0 (Maid Headband, Neko Ears, Devil Horns, Angel Halo, Nurse Cap).
+  void _paintWardrobeHeadwear(Canvas canvas, Offset c, double r) {
+    switch (wardrobe.headwear) {
+      case MimiHeadwear.classicRibbons:
+        return;
+      case MimiHeadwear.maidFrillBand:
+        for (var i = -5; i <= 5; i++) {
+          final angle = math.pi * 1.5 + (i * 0.11);
+          final pos = c.translate(
+            math.cos(angle) * r * 0.78,
+            math.sin(angle) * r * 0.78 - r * 0.10,
+          );
+          canvas.drawCircle(
+            pos,
+            r * 0.11,
+            Paint()..color = Colors.white.withAlphaFactor(0.95),
+          );
+          canvas.drawCircle(
+            pos,
+            r * 0.11,
+            Paint()
+              ..color = CuteHorrorPalette.hotPink
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.3,
+          );
+        }
+        break;
+      case MimiHeadwear.nekoCatEars:
+        for (final sign in [-1.0, 1.0]) {
+          final base = c.translate(sign * r * 0.48, -r * 0.76);
+          final earPath = Path()
+            ..moveTo(base.dx - sign * r * 0.18, base.dy + r * 0.10)
+            ..lineTo(base.dx + sign * r * 0.10, base.dy - r * 0.38)
+            ..lineTo(base.dx + sign * r * 0.26, base.dy + r * 0.14)
+            ..close();
+          canvas.drawPath(earPath, Paint()..color = const Color(0xFF1A0814));
+          canvas.drawPath(
+            earPath,
+            Paint()
+              ..color = CuteHorrorPalette.hotPink
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.8,
+          );
+        }
+        break;
+      case MimiHeadwear.cyberDevilHorns:
+        for (final sign in [-1.0, 1.0]) {
+          final base = c.translate(sign * r * 0.42, -r * 0.78);
+          final hornPath = Path()
+            ..moveTo(base.dx - sign * r * 0.10, base.dy + r * 0.08)
+            ..quadraticBezierTo(
+              base.dx + sign * r * 0.26,
+              base.dy - r * 0.18,
+              base.dx + sign * r * 0.14,
+              base.dy - r * 0.42,
+            )
+            ..quadraticBezierTo(
+              base.dx + sign * r * 0.02,
+              base.dy - r * 0.18,
+              base.dx + sign * r * 0.10,
+              base.dy + r * 0.08,
+            )
+            ..close();
+          canvas.drawPath(
+            hornPath,
+            Paint()..color = CuteHorrorPalette.cyberCrimson,
+          );
+        }
+        break;
+      case MimiHeadwear.angelHalo:
+        final haloRect = Rect.fromCenter(
+          center: c.translate(0, -r * 1.06 + math.sin(time * 3.0) * 3.5),
+          width: r * 0.92,
+          height: r * 0.20,
+        );
+        canvas.drawOval(
+          haloRect,
+          Paint()
+            ..color = const Color(0xFFFFE57F)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4.2,
+        );
+        break;
+      case MimiHeadwear.nurseHeartCap:
+        final capRect = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: c.translate(0, -r * 0.88),
+            width: r * 0.68,
+            height: r * 0.30,
+          ),
+          Radius.circular(r * 0.08),
+        );
+        canvas.drawRRect(capRect, Paint()..color = Colors.white);
+        canvas.drawRRect(
+          capRect,
+          Paint()
+            ..color = CuteHorrorPalette.hotPink
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.8,
+        );
+        _drawHeartShape(
+          canvas,
+          c.translate(0, -r * 0.88),
+          r * 0.15,
+          Paint()..color = CuteHorrorPalette.cyberCrimson,
+        );
+        break;
     }
   }
 
@@ -1569,6 +1834,8 @@ class MimiAvatarPainter extends CustomPainter {
         oldDelegate.lookOffset != lookOffset ||
         oldDelegate.blinkProgress != blinkProgress ||
         oldDelegate.blushBoost != blushBoost ||
-        oldDelegate.annoyedIntensity != annoyedIntensity;
+        oldDelegate.annoyedIntensity != annoyedIntensity ||
+        oldDelegate.wardrobe != wardrobe ||
+        oldDelegate.facialExpression != facialExpression;
   }
 }
