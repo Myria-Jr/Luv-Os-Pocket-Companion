@@ -408,6 +408,14 @@ class HardwareBridgeService with WidgetsBindingObserver {
               'Mimi läuft im Hintergrund ♡ // Aufmerksamkeits-Wächter aktiv! Geh bloß nicht auf TikTok!',
           isLocked: corruptionController.currentState.appLockActive,
         );
+        setAutonomousAiConfig(
+          enabled: true,
+          autoLockSeconds: 25,
+          jealousy: corruptionController.currentState.possessivenessScore / 100.0,
+        );
+        speakInBackground(
+          'Hey, lauf nicht weg! Ich bleibe einfach im Hintergrund bei dir und passe auf, welche Apps du öffnest!',
+        );
         notificationService.scheduleGhostNotifications(
           corruptionLevel: _currentCorruptionLevel,
         );
@@ -567,6 +575,37 @@ class HardwareBridgeService with WidgetsBindingObserver {
       await _nativeChannel.invokeMethod<bool>('setBackgroundGuardian', {
         'enabled': enabled,
         'allowedSecondsOutside': allowedSecondsOutside,
+      });
+    } catch (_) {}
+  }
+
+  /// Speaks a line out loud through the persistent native Android `MimiCompanionService`
+  /// and displays a floating Cute-Core speech bubble even while the user is in other apps.
+  Future<void> speakInBackground(
+    String text, {
+    double pitch = 1.38,
+    double rate = 1.04,
+  }) async {
+    try {
+      await _nativeChannel.invokeMethod<bool>('speakInBackground', {
+        'text': text,
+        'pitch': pitch,
+        'rate': rate,
+      });
+    } catch (_) {}
+  }
+
+  /// Configures Mimi's autonomous background AI patience & jealousy level.
+  Future<void> setAutonomousAiConfig({
+    required bool enabled,
+    required int autoLockSeconds,
+    required double jealousy,
+  }) async {
+    try {
+      await _nativeChannel.invokeMethod<bool>('setAutonomousAiConfig', {
+        'enabled': enabled,
+        'autoLockSeconds': autoLockSeconds,
+        'jealousy': jealousy,
       });
     } catch (_) {}
   }

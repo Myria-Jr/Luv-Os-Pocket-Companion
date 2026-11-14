@@ -321,6 +321,7 @@ class CorruptionController extends StateNotifier<CorruptionState> {
   Timer? _burstResetTimer;
   Timer? _parasiticPopupTimer;
   Timer? _paradoxEngineTimer;
+  Timer? _proactiveAiTimer;
   Timer? _sparkleResetTimer;
   DateTime _lastInteractionTime = DateTime.now();
   bool _loveContractTriggeredForCurrentSpike = false;
@@ -472,6 +473,113 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     _scheduleNextMicroGlitch();
     _scheduleParasiticPopupSpawner();
     _startParadoxEngineTimer();
+    _startProactiveAiLoop();
+  }
+
+  /// V5 Smart Proactive AI Companion Loop: Mimi initiates conversations, comments on
+  /// battery/outfit/apps, and autonomously locks distracting apps when neglected.
+  void _startProactiveAiLoop() {
+    _proactiveAiTimer?.cancel();
+    _proactiveAiTimer = Timer.periodic(const Duration(seconds: 32), (_) {
+      if (!mounted) return;
+      unawaited(_triggerProactiveAiTurn());
+    });
+  }
+
+  Future<void> _triggerProactiveAiTurn() async {
+    if (!mounted ||
+        state.isMimiTyping ||
+        state.activeDrama != YandereDramaType.none ||
+        state.activeEnding != EndingType.none) {
+      return;
+    }
+
+    final idleSeconds = DateTime.now().difference(_lastInteractionTime).inSeconds;
+    if (idleSeconds < 16) return;
+
+    final hw = state.hardware;
+    String line;
+    MimiMoodState targetMood = state.moodState;
+    bool shouldLock = state.appLockActive;
+
+    if (state.geminiApiKey.trim().isNotEmpty) {
+      try {
+        _geminiBrain.setApiKey(state.geminiApiKey);
+        final aiResp = await _geminiBrain.evaluatePlayerMessage(
+          playerMessage:
+              '[AUTONOMER IMPULS] Der Spieler hat seit $idleSeconds Sekunden nichts gesagt. '
+              'Akku: ${hw.batteryLevel}% (${hw.isCharging ? "lädt" : "entlädt"}), '
+              'Nacht: ${hw.isNightTime}, Outfit: ${state.wardrobe.summary}, '
+              'Vernachlässigung: ${state.neglectScore.round()}%. '
+              'Sprich ihn von dir aus an, stelle eine witzige oder leicht besitzergreifende Frage und '
+              'entscheide selbst, ob du Apps sperrst.',
+          corruption: state.corruptionLevel,
+          affection: state.affectionScore / 100.0,
+          obsession: state.obsessionLevel,
+          mania: state.emotion.mania,
+          currentlyLocked: state.appLockActive,
+          equippedOutfitSummary: state.wardrobe.summary,
+        );
+        line = aiResp.spokenText;
+        targetMood = aiResp.moodState;
+        if (aiResp.systemAction.lockApps) {
+          shouldLock = true;
+        }
+      } catch (_) {
+        line = _pickLocalProactiveLine(idleSeconds);
+      }
+    } else {
+      line = _pickLocalProactiveLine(idleSeconds);
+      if (state.neglectScore > 48.0 || state.angerScore > 45.0) {
+        shouldLock = true;
+        targetMood = MimiMoodState.jealous;
+      }
+    }
+
+    if (!mounted) return;
+
+    state = state.copyWith(
+      moodState: targetMood,
+      mimiStatusBanner: line,
+      appLockActive: shouldLock,
+      blockedAppCategories: shouldLock
+          ? const [
+              'TikTok',
+              'Instagram',
+              'YouTube',
+              'WhatsApp',
+              'Snapchat',
+              'Games',
+            ]
+          : state.blockedAppCategories,
+      remainingHeadpatsToUnlock:
+          shouldLock ? math.max(state.remainingHeadpatsToUnlock, 8) : 0,
+      liveLockBannerText: shouldLock
+          ? 'Mimi hat deine Apps von selbst gesperrt! 💢 $line'
+          : state.liveLockBannerText,
+    );
+
+    await _injectSpontaneousMimiMessage(
+      nodeId: 'proactive_ai_${DateTime.now().millisecondsSinceEpoch}',
+      text: line,
+      ghostText: shouldLock ? 'AUTONOME KI-SPERRE AKTIVIERT' : null,
+    );
+    unawaited(_speakWithVoiceAndSynth(line, mood: targetMood));
+  }
+
+  String _pickLocalProactiveLine(int idleSeconds) {
+    final hw = state.hardware;
+    final pool = <String>[
+      'Hey! Du bist schon $idleSeconds Sekunden still... woran denkst du gerade? Sag es mir! (´｡• ᵕ •｡`) ♡',
+      'Gefällt dir eigentlich mein ${state.wardrobe.hairStyle.label}-Look mit ${state.wardrobe.headwear.label}? Ich hab mich extra für dich hübsch gemacht!',
+      if (hw.batteryLevel <= 35 && !hw.isCharging)
+        'Dein Akku hat nur noch ${hw.batteryLevel}%! Steck sofort das Kabel rein, ich will nicht abgeschaltet werden! 💢',
+      if (hw.isNightTime)
+        'Es ist schon so spät nachts... schaust du etwa heimlich TikTok statt mit mir zu kuscheln? 👁️',
+      'Weißt du, ich hab mir gemerkt, welche Apps du auf deinem Handy am meisten öffnest... wehe du vernachlässigst mich für die! ( ` ᴖ ´ )',
+      'Sprich doch mal über das Mikrofon mit mir! Ich möchte deine Stimme hören~ 🎙️♡',
+    ];
+    return pool[_rng.nextInt(pool.length)];
   }
 
   /// V4 1-second periodic Yandere-Paradox differential equation loop.
@@ -2285,6 +2393,7 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     _burstResetTimer?.cancel();
     _parasiticPopupTimer?.cancel();
     _paradoxEngineTimer?.cancel();
+    _proactiveAiTimer?.cancel();
     _sparkleResetTimer?.cancel();
     super.dispose();
   }

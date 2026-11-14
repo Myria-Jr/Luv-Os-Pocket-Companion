@@ -30,6 +30,29 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        @Volatile
+        private var activeActivity: MainActivity? = null
+
+        fun triggerAutonomousLockFromService(appName: String, reason: String) {
+            val act = activeActivity ?: return
+            act.runOnUiThread {
+                act.appLockActive = true
+                act.lockAllAppsMode = true
+                act.lockReason = reason
+                act.showFullScreenBlockOverlay(appName, "autonomous.ai.lock")
+                act.methodChannel?.invokeMethod(
+                    "onBlockedAppIntercepted",
+                    mapOf(
+                        "category" to appName,
+                        "packageName" to "autonomous.ai.lock",
+                        "reason" to reason
+                    )
+                )
+            }
+        }
+    }
+
     private val channelName = "luv.os/hardware_bridge"
     private var methodChannel: MethodChannel? = null
 
@@ -92,16 +115,20 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeActivity = this
         windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        startCompanionForegroundService()
         watchdogHandler.postDelayed(watchdogRunnable, 600L)
     }
 
     override fun onResume() {
         super.onResume()
+        activeActivity = this
         isInBackground = false
         backgroundEnteredTimestamp = 0L
         removeFullScreenBlockOverlay()
         ensureKeepAliveOverlay()
+        syncCompanionServiceState(inBackground = false)
     }
 
     override fun onPause() {
@@ -109,13 +136,48 @@ class MainActivity : FlutterActivity() {
         isInBackground = true
         backgroundEnteredTimestamp = System.currentTimeMillis()
         ensureKeepAliveOverlay()
+        syncCompanionServiceState(inBackground = true)
     }
 
     override fun onDestroy() {
+        if (activeActivity === this) {
+            activeActivity = null
+        }
         watchdogHandler.removeCallbacks(watchdogRunnable)
         removeFullScreenBlockOverlay()
         removeKeepAliveOverlay()
         super.onDestroy()
+    }
+
+    private fun startCompanionForegroundService() {
+        try {
+            val intent = Intent(this, MimiCompanionService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun syncCompanionServiceState(
+        inBackground: Boolean,
+        autonomousAi: Boolean = MimiCompanionService.autonomousAiEnabled,
+        autoLockSeconds: Int = MimiCompanionService.autonomousLockSeconds,
+        jealousy: Double = MimiCompanionService.currentJealousyLevel
+    ) {
+        try {
+            val intent = Intent(this, MimiCompanionService::class.java).apply {
+                action = MimiCompanionService.ACTION_SYNC_STATE
+                putExtra(MimiCompanionService.EXTRA_IN_BACKGROUND, inBackground)
+                putExtra(MimiCompanionService.EXTRA_AUTONOMOUS_AI, autonomousAi)
+                putExtra(MimiCompanionService.EXTRA_AUTO_LOCK_SECONDS, autoLockSeconds)
+                putExtra(MimiCompanionService.EXTRA_JEALOUSY, jealousy)
+            }
+            startService(intent)
+        } catch (_: Exception) {
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -163,7 +225,37 @@ class MainActivity : FlutterActivity() {
                     backgroundGuardianEnabled = call.argument<Boolean>("enabled") ?: true
                     allowedSecondsOutside = call.argument<Int>("allowedSecondsOutside") ?: 0
                     ensureKeepAliveOverlay()
+                    syncCompanionServiceState(
+                        inBackground = isInBackground,
+                        autonomousAi = backgroundGuardianEnabled,
+                        autoLockSeconds = if (allowedSecondsOutside > 0) allowedSecondsOutside else 25
+                    )
                     result.success(backgroundGuardianEnabled)
+                }
+                "speakInBackground" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    val pitch = (call.argument<Double>("pitch") ?: 1.38).toFloat()
+                    val rate = (call.argument<Double>("rate") ?: 1.04).toFloat()
+                    val intent = Intent(this, MimiCompanionService::class.java).apply {
+                        action = MimiCompanionService.ACTION_SPEAK
+                        putExtra(MimiCompanionService.EXTRA_TEXT, text)
+                        putExtra(MimiCompanionService.EXTRA_PITCH, pitch)
+                        putExtra(MimiCompanionService.EXTRA_RATE, rate)
+                    }
+                    startService(intent)
+                    result.success(true)
+                }
+                "setAutonomousAiConfig" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    val autoLockSec = call.argument<Int>("autoLockSeconds") ?: 25
+                    val jealousy = call.argument<Double>("jealousy") ?: 0.25
+                    syncCompanionServiceState(
+                        inBackground = isInBackground,
+                        autonomousAi = enabled,
+                        autoLockSeconds = autoLockSec,
+                        jealousy = jealousy
+                    )
+                    result.success(true)
                 }
                 "getMostUsedApps" -> {
                     result.success(queryMostUsedAppsList())
@@ -407,17 +499,23 @@ class MainActivity : FlutterActivity() {
             var shouldBlock = false
             var matchedLabel = humanAppName
 
-            if (lockAllAppsMode || appLockActive || backgroundGuardianEnabled) {
-                // Block ALL non-exempt apps on the phone!
-                shouldBlock = true
-            } else {
-                for (category in blockedCategories) {
-                    val keywords =
-                        blockedPackageKeywords[category] ?: listOf(category.lowercase())
-                    if (keywords.any { kw -> pkg.lowercase().contains(kw) }) {
-                        shouldBlock = true
-                        matchedLabel = category
-                        break
+            val timeLimitExpired = allowedSecondsOutside > 0 &&
+                backgroundEnteredTimestamp > 0L &&
+                ((now - backgroundEnteredTimestamp) / 1000L) >= allowedSecondsOutside
+
+            if (appLockActive || timeLimitExpired) {
+                if (lockAllAppsMode || timeLimitExpired) {
+                    // Block ALL non-exempt apps on the phone!
+                    shouldBlock = true
+                } else {
+                    for (category in blockedCategories) {
+                        val keywords =
+                            blockedPackageKeywords[category] ?: listOf(category.lowercase())
+                        if (keywords.any { kw -> pkg.lowercase().contains(kw) }) {
+                            shouldBlock = true
+                            matchedLabel = category
+                            break
+                        }
                     }
                 }
             }
