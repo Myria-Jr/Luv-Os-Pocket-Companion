@@ -471,22 +471,48 @@ class HardwareBridgeService with WidgetsBindingObserver {
     await _pushHardwareSnapshot();
   }
 
-  /// Synchronizes Mimi's V3 App-Locker state with the native Android UsageStats watchdog.
+  /// Synchronizes Mimi's V3/V5 App-Locker state with the native Android UsageStats & Overlay Blocker.
   Future<void> syncAppLockToNative({
     required bool locked,
     required List<String> blockedCategories,
     required String reason,
     required int requiredHeadpats,
+    bool lockAllApps = true,
+    int allowedSecondsOutside = 0,
   }) async {
     try {
       await _nativeChannel.invokeMethod<bool>('setAppLockState', {
         'locked': locked,
+        'lockAllApps': lockAllApps,
+        'allowedSecondsOutside': allowedSecondsOutside,
         'blockedCategories': blockedCategories,
         'reason': reason,
         'requiredHeadpats': requiredHeadpats,
       });
     } catch (_) {
       // Ignored on desktop/web test targets.
+    }
+  }
+
+  /// Queries the player's top most-used apps on their Android phone via UsageStatsManager
+  /// so Mimi's AI can analyze and lock the apps they use the most!
+  Future<List<Map<String, dynamic>>> getMostUsedApps() async {
+    try {
+      final raw =
+          await _nativeChannel.invokeMethod<List<dynamic>>('getMostUsedApps');
+      if (raw == null) return const [];
+      return raw
+          .whereType<Map<dynamic, dynamic>>()
+          .map(
+            (m) => <String, dynamic>{
+              'packageName': (m['packageName'] ?? '').toString(),
+              'appName': (m['appName'] ?? 'App').toString(),
+              'minutes': (m['minutes'] as num?)?.toInt() ?? 1,
+            },
+          )
+          .toList();
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -533,10 +559,15 @@ class HardwareBridgeService with WidgetsBindingObserver {
   }
 
   /// Enables or disables Mimi's background guardian watchdog when the user leaves the app.
-  Future<void> setBackgroundGuardian(bool enabled) async {
+  Future<void> setBackgroundGuardian(
+    bool enabled, {
+    int allowedSecondsOutside = 0,
+  }) async {
     try {
-      await _nativeChannel
-          .invokeMethod<bool>('setBackgroundGuardian', {'enabled': enabled});
+      await _nativeChannel.invokeMethod<bool>('setBackgroundGuardian', {
+        'enabled': enabled,
+        'allowedSecondsOutside': allowedSecondsOutside,
+      });
     } catch (_) {}
   }
 

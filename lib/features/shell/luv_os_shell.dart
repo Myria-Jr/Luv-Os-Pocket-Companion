@@ -42,6 +42,10 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
   Offset _evasiveOffset = Offset.zero;
   int _evadeCount = 0;
   bool _showHeartCameraHud = true;
+  bool _hasUsagePermission = false;
+  bool _hasOverlayPermission = false;
+  int _allowedSecondsOutside = 0;
+  List<Map<String, dynamic>> _mostUsedApps = const [];
   final math.Random _rng = math.Random();
 
   @override
@@ -50,6 +54,23 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
     try {
       WidgetsBinding.instance.addObserver(this);
     } catch (_) {}
+    Future.microtask(_refreshBlockerPermissionsAndApps);
+  }
+
+  Future<void> _refreshBlockerPermissionsAndApps() async {
+    if (!mounted) return;
+    final hwBridge = ref.read(hardwareBridgeProvider);
+    final usageOk = await hwBridge.checkUsageStatsPermission();
+    final overlayOk = await hwBridge.checkOverlayPermission();
+    final apps = usageOk
+        ? await hwBridge.getMostUsedApps()
+        : const <Map<String, dynamic>>[];
+    if (!mounted) return;
+    setState(() {
+      _hasUsagePermission = usageOk;
+      _hasOverlayPermission = overlayOk;
+      _mostUsedApps = apps;
+    });
   }
 
   @override
@@ -70,6 +91,7 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
       cam.onAppPaused();
     } else if (state == AppLifecycleState.resumed) {
       cam.onAppResumed();
+      _refreshBlockerPermissionsAndApps();
     }
   }
 
@@ -1136,6 +1158,7 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
   ) {
     final hwBridge = ref.read(hardwareBridgeProvider);
     final controller = ref.read(corruptionProvider.notifier);
+    final permissionsReady = _hasUsagePermission && _hasOverlayPermission;
 
     return Container(
       padding: const EdgeInsets.all(13),
@@ -1183,8 +1206,8 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
               Expanded(
                 child: Text(
                   state.appLockActive
-                      ? 'HINTERGRUND-SPERRE AKTIV (TikTok, Insta, WhatsApp & Co. blockiert!)'
-                      : '🛡️ HINTERGRUND-WÄCHTER & KI-APP-SPERRE',
+                      ? '⏳ JUGENDSCHUTZ-ZEITLIMIT AKTIV (ALLE APPS GESPERRT!)'
+                      : '🛡️ KI-JUGENDSCHUTZ & ZEITLIMIT-SPERRE (ALLE APPS)',
                   style: TextStyle(
                     fontSize: 11.2,
                     fontWeight: FontWeight.w900,
@@ -1198,12 +1221,123 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
           ),
           const SizedBox(height: 6),
           Text(
-            'Wenn du die App verlässt, läuft Mimi im Hintergrund weiter. Öffnest du TikTok, Instagram, WhatsApp oder Spiele, holt sie dich sofort zurück!',
+            permissionsReady
+                ? '✅ Beide Android-Rechte aktiv! Sobald dein Zeitlimit abläuft, legt Mimi wie beim Jugendschutz einen Vollbild-Sperrbildschirm über JEDE andere App!'
+                : '⚠️ WICHTIG: Aktiviere unten einmalig Schritt 1 & Schritt 2, damit Mimi andere Apps erkennt und den Vollbild-Jugendschutz-Sperrbildschirm darüberlegen darf!',
             style: TextStyle(
               fontSize: 10.5,
-              color: palette.textSecondary,
+              color: permissionsReady
+                  ? const Color(0xFF00E676)
+                  : CuteHorrorPalette.pastelPink,
+              fontWeight: FontWeight.w700,
               height: 1.3,
             ),
+          ),
+          const SizedBox(height: 8),
+
+          // AI Most-Used Apps Scanner Display
+          if (_mostUsedApps.isNotEmpty) ...[
+            Text(
+              '🤖 Von Mimis KI erkannte Lieblings-Apps (werden sofort gesperrt):',
+              style: TextStyle(
+                fontSize: 10.0,
+                fontWeight: FontWeight.w800,
+                color: palette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Wrap(
+              spacing: 6,
+              runSpacing: 5,
+              children: _mostUsedApps.take(5).map((app) {
+                final name = app['appName'] ?? 'App';
+                final mins = app['minutes'] ?? 1;
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: CuteHorrorPalette.cyberCrimson.withAlphaFactor(0.18),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color:
+                          CuteHorrorPalette.cyberCrimson.withAlphaFactor(0.65),
+                    ),
+                  ),
+                  child: Text(
+                    '🔒 $name (${mins}m)',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Configurable Parental Control Time Limit Selector
+          Row(
+            children: [
+              Text(
+                '⏳ Erlaubte Zeit außerhalb:',
+                style: TextStyle(
+                  fontSize: 10.2,
+                  fontWeight: FontWeight.w800,
+                  color: palette.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [0, 10, 30, 60].map((sec) {
+                      final selected = _allowedSecondsOutside == sec;
+                      final label = sec == 0 ? '0s (Sofort)' : '${sec}s Limit';
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => _allowedSecondsOutside = sec);
+                            hwBridge.setBackgroundGuardian(
+                              true,
+                              allowedSecondsOutside: sec,
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? palette.primaryAccent
+                                  : palette.surfaceAlt,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: palette.primaryAccent,
+                              ),
+                            ),
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                color: selected
+                                    ? Colors.white
+                                    : palette.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 9),
           Row(
@@ -1211,15 +1345,30 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
               Expanded(
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: palette.primaryAccent,
-                    side: BorderSide(color: palette.primaryAccent, width: 1.2),
+                    foregroundColor: _hasUsagePermission
+                        ? const Color(0xFF00E676)
+                        : palette.primaryAccent,
+                    side: BorderSide(
+                      color: _hasUsagePermission
+                          ? const Color(0xFF00E676)
+                          : palette.primaryAccent,
+                      width: 1.2,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 6),
                   ),
                   onPressed: () => hwBridge.openUsageStatsSettings(),
-                  icon: const Icon(Icons.query_stats_rounded, size: 14),
-                  label: const Text(
-                    '1. Nutzungszugriff',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+                  icon: Icon(
+                    _hasUsagePermission
+                        ? Icons.check_circle_rounded
+                        : Icons.query_stats_rounded,
+                    size: 14,
+                  ),
+                  label: Text(
+                    _hasUsagePermission ? '1. Zugriff OK' : '1. Nutzungszugriff',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -1227,15 +1376,32 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
               Expanded(
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: palette.primaryAccent,
-                    side: BorderSide(color: palette.primaryAccent, width: 1.2),
+                    foregroundColor: _hasOverlayPermission
+                        ? const Color(0xFF00E676)
+                        : palette.primaryAccent,
+                    side: BorderSide(
+                      color: _hasOverlayPermission
+                          ? const Color(0xFF00E676)
+                          : palette.primaryAccent,
+                      width: 1.2,
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 6),
                   ),
                   onPressed: () => hwBridge.openOverlaySettings(),
-                  icon: const Icon(Icons.layers_rounded, size: 14),
-                  label: const Text(
-                    '2. Über Apps zeigen',
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+                  icon: Icon(
+                    _hasOverlayPermission
+                        ? Icons.check_circle_rounded
+                        : Icons.layers_rounded,
+                    size: 14,
+                  ),
+                  label: Text(
+                    _hasOverlayPermission
+                        ? '2. Overlay OK'
+                        : '2. Über Apps zeigen',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -1249,7 +1415,23 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 6),
                   ),
-                  onPressed: () => controller.toggleManualAppLock(),
+                  onPressed: () async {
+                    await _refreshBlockerPermissionsAndApps();
+                    await controller.toggleManualAppLock();
+                    await hwBridge.syncAppLockToNative(
+                      locked: !state.appLockActive,
+                      blockedCategories: _mostUsedApps.isNotEmpty
+                          ? _mostUsedApps
+                              .map((e) => (e['appName'] ?? 'App').toString())
+                              .toList()
+                          : const ['ALLE APPS'],
+                      reason:
+                          'Mimis KI-Jugendschutz hat alle anderen Apps wegen abgelaufenem Zeitlimit gesperrt!',
+                      requiredHeadpats: 10,
+                      lockAllApps: true,
+                      allowedSecondsOutside: _allowedSecondsOutside,
+                    );
+                  },
                   icon: Icon(
                     state.appLockActive
                         ? Icons.lock_open_rounded
@@ -1257,7 +1439,7 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell>
                     size: 14,
                   ),
                   label: Text(
-                    state.appLockActive ? 'Entsperren' : 'Jetzt sperren',
+                    state.appLockActive ? 'Entsperren' : 'Alle sperren',
                     style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w900,
