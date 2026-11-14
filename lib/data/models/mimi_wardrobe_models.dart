@@ -248,6 +248,18 @@ class MimiGiftItem {
 
 const List<MimiGiftItem> kMimiGiftCatalog = [
   MimiGiftItem(
+    id: 'gift_white_peach_energy',
+    name: 'Red Bull White Peach Energy',
+    emoji: '🍑',
+    description:
+        'Mimis absoluter Lieblings-Energy-Drink (+28 Zuneigung, -30 Wut, entsperrt Apps!).',
+    affectionBoost: 28,
+    angerReduction: 30,
+    instantAppUnlock: true,
+    mimiReactionText:
+        'OMG!! Ein eiskalter Red Bull White Peach?! 🍑⚡ *zisch & schlürf* (´｡• ᵕ •｡`) ♡ Du kennst mich einfach in- und auswendig! Ich lösche deinen Wecker morgen früh doch nicht und schalte deine Apps frei~',
+  ),
+  MimiGiftItem(
     id: 'gift_strawberry_boba',
     name: 'Erdbeer-Boba-Tea',
     emoji: '🧋',

@@ -36,12 +36,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // Known package fragments for TikTok, Instagram, YouTube, Snapchat & Mobile Games
+    // Known package fragments for TikTok, Instagram, YouTube, Games & V4 System Apps
     private val blockedPackageKeywords = mapOf(
         "TikTok" to listOf("musically", "trill", "tiktok"),
         "Instagram" to listOf("instagram"),
         "YouTube" to listOf("youtube"),
-        "Games" to listOf("roblox", "genshin", "brawlstars", "clash", "minecraft", "pubg", "freefire")
+        "Games" to listOf("roblox", "genshin", "brawlstars", "clash", "minecraft", "pubg", "freefire"),
+        "Taschenrechner" to listOf("calculator", "calc"),
+        "Kalender" to listOf("calendar"),
+        "Wetter-App" to listOf("weather")
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {

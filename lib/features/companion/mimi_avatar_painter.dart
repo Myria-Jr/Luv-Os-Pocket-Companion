@@ -424,6 +424,9 @@ class _MimiCompanionAvatarState extends ConsumerState<MimiCompanionAvatar>
                   burstParticles: _burstParticles,
                   wardrobe: state.wardrobe,
                   facialExpression: state.facialExpression,
+                  angerScore: state.angerScore,
+                  neglectScore: state.neglectScore,
+                  voiceComplimentSparkle: state.voiceComplimentSparkle,
                 ),
               ),
             ),
@@ -503,6 +506,9 @@ class MimiAvatarPainter extends CustomPainter {
   final List<HeartBurstParticle> burstParticles;
   final MimiWardrobeLoadout wardrobe;
   final MimiFacialExpression facialExpression;
+  final double angerScore;
+  final double neglectScore;
+  final bool voiceComplimentSparkle;
 
   const MimiAvatarPainter({
     required this.time,
@@ -522,6 +528,9 @@ class MimiAvatarPainter extends CustomPainter {
     this.burstParticles = const [],
     this.wardrobe = const MimiWardrobeLoadout(),
     this.facialExpression = const MimiFacialExpression(),
+    this.angerScore = 5.0,
+    this.neglectScore = 8.0,
+    this.voiceComplimentSparkle = false,
   });
 
   @override
@@ -763,11 +772,26 @@ class MimiAvatarPainter extends CustomPainter {
       ..strokeWidth = 2.0;
 
     final twitch = math.sin(time * 5.2) * 3.0;
+    // V4 Anime Head 3.5: Puppy ears droop downward when neglectScore > 40,
+    // and perk upward when stroked or praised via voice!
+    final neglectDroop = neglectScore > 40.0
+        ? ((neglectScore - 40.0) / 60.0).clamp(0.0, 1.0) * r * 0.44
+        : 0.0;
+    final perkBoost =
+        (voiceComplimentSparkle ? -r * 0.10 : 0.0) - (blushBoost * r * 0.08);
+
     for (final sign in [-1.0, 1.0]) {
       final base = c.translate(sign * r * 0.52, -r * 0.72);
       final tip = Offset(
-        base.dx + sign * r * 0.36 + earSpringOffset.dx * 0.7,
-        base.dy - r * 0.44 + earSpringOffset.dy * 0.5 + (sign > 0 ? twitch : -twitch),
+        base.dx +
+            sign * (r * 0.36 + neglectDroop * 0.35) +
+            earSpringOffset.dx * 0.7,
+        base.dy -
+            r * 0.44 +
+            neglectDroop +
+            perkBoost +
+            earSpringOffset.dy * 0.5 +
+            (sign > 0 ? twitch : -twitch),
       );
 
       final outerEar = Path()
@@ -948,6 +972,23 @@ class MimiAvatarPainter extends CustomPainter {
       ..close();
 
     canvas.drawPath(facePath, Paint()..color = skinBase);
+    // V4 Anime Head 3.5: Cel-Shading Rim-Light highlight along chin & lower cheek
+    final rimLightPaint = Paint()
+      ..color = Colors.white.withAlphaFactor(0.68)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: c.translate(0, r * 0.18),
+        width: r * 1.18,
+        height: r * 1.16,
+      ),
+      math.pi * 0.22,
+      math.pi * 0.56,
+      false,
+      rimLightPaint,
+    );
     canvas.drawPath(
       facePath,
       Paint()
@@ -1213,9 +1254,25 @@ class MimiAvatarPainter extends CustomPainter {
         );
       }
 
+      // V4 Anime Head 3.5: Sparkling Star & Heart Particles inside pupils on voice compliment
+      if (voiceComplimentSparkle || blushBoost > 0.25) {
+        _drawSparkleStar(
+          canvas,
+          pupilCenter.translate(irisW * 0.20, irisH * 0.16),
+          irisW * 0.18,
+          Paint()..color = const Color(0xFFFFF59D),
+        );
+        _drawHeartShape(
+          canvas,
+          pupilCenter.translate(-irisW * 0.14, irisH * 0.18),
+          irisW * 0.22,
+          Paint()..color = Colors.white.withAlphaFactor(0.92),
+        );
+      }
+
       canvas.restore();
 
-      // Thick upper anime eyelash arch
+      // Thick upper anime eyelash arch + V4 Double Eyelash Arch
       final lashPaint = Paint()
         ..color = const Color(0xFF290412)
         ..style = PaintingStyle.stroke
@@ -1227,6 +1284,18 @@ class MimiAvatarPainter extends CustomPainter {
         math.pi * 0.84,
         false,
         lashPaint,
+      );
+      final doubleLashPaint = Paint()
+        ..color = const Color(0xFF4A1025).withAlphaFactor(0.75)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+        eyeRect.inflate(4.5),
+        math.pi * 1.14,
+        math.pi * 0.72,
+        false,
+        doubleLashPaint,
       );
     }
   }
@@ -1305,6 +1374,23 @@ class MimiAvatarPainter extends CustomPainter {
       ..strokeWidth = 2.3
       ..strokeCap = StrokeCap.round;
 
+    // V4 Anime Head 3.5: Glossy lower-lip highlight beneath mouth
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: mouthCenter.translate(0, r * 0.085),
+        width: r * 0.12,
+        height: r * 0.035,
+      ),
+      0.15,
+      math.pi - 0.3,
+      false,
+      Paint()
+        ..color = CuteHorrorPalette.pastelPink.withAlphaFactor(0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0
+        ..strokeCap = StrokeCap.round,
+    );
+
     if (lipSyncOpenness > 0.06 && activeVowel != MimiVowelShape.closed) {
       final vowelW = r * 0.22 * lipSyncWidth;
       final vowelH = (r * 0.06 + r * 0.18 * lipSyncOpenness).clamp(r * 0.05, r * 0.26);
@@ -1356,6 +1442,13 @@ class MimiAvatarPainter extends CustomPainter {
         Paint()..color = const Color(0xFFD83B6C),
       );
       canvas.drawArc(happyRect, 0, math.pi, true, mouthStroke);
+      // V4 Anime Head 3.5: Cute anime fang (Yaeba) on happy grin
+      final yaeba = Path()
+        ..moveTo(mouthCenter.dx + r * 0.05, mouthCenter.dy)
+        ..lineTo(mouthCenter.dx + r * 0.095, mouthCenter.dy)
+        ..lineTo(mouthCenter.dx + r * 0.072, mouthCenter.dy + r * 0.048)
+        ..close();
+      canvas.drawPath(yaeba, Paint()..color = Colors.white);
       return;
     }
 
@@ -1734,6 +1827,66 @@ class MimiAvatarPainter extends CustomPainter {
       _drawHeartShape(canvas, p.position, p.size, Paint()..color = color);
     }
 
+    // V4 Anime Head 3.5: Pulsing Red Anger Symbol (💢) & Rising Steam Puffs when angerScore > 60
+    if (angerScore > 60.0 || annoyedIntensity > 0.25) {
+      final angerPulse = 1.0 + math.sin(time * 9.5) * 0.16;
+      final veinCenter = headCenter.translate(r * 0.56, -r * 0.54);
+      final veinPaint = Paint()
+        ..color = CuteHorrorPalette.cyberCrimson
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.6
+        ..strokeCap = StrokeCap.round;
+      final vs = r * 0.11 * angerPulse;
+      // Draw 4 classic anime anger cross-vein curves (💢)
+      canvas.drawArc(
+        Rect.fromCenter(
+            center: veinCenter.translate(-vs, -vs), width: vs * 1.4, height: vs * 1.4),
+        0.1,
+        math.pi * 0.42,
+        false,
+        veinPaint,
+      );
+      canvas.drawArc(
+        Rect.fromCenter(
+            center: veinCenter.translate(vs, -vs), width: vs * 1.4, height: vs * 1.4),
+        math.pi * 0.58,
+        math.pi * 0.42,
+        false,
+        veinPaint,
+      );
+      canvas.drawArc(
+        Rect.fromCenter(
+            center: veinCenter.translate(-vs, vs), width: vs * 1.4, height: vs * 1.4),
+        math.pi * 1.58,
+        math.pi * 0.42,
+        false,
+        veinPaint,
+      );
+      canvas.drawArc(
+        Rect.fromCenter(
+            center: veinCenter.translate(vs, vs), width: vs * 1.4, height: vs * 1.4),
+        math.pi * 1.08,
+        math.pi * 0.42,
+        false,
+        veinPaint,
+      );
+
+      // Rising steam puffs above Mimi's head
+      for (var i = 0; i < 3; i++) {
+        final phaseT = (time * 0.9 + i * 0.33) % 1.0;
+        final steamPos = headCenter.translate(
+          (i - 1) * r * 0.34 + math.sin(time * 3.0 + i) * 4.0,
+          -r * (0.95 + phaseT * 0.38),
+        );
+        final steamAlpha = (1.0 - phaseT).clamp(0.0, 0.65);
+        canvas.drawCircle(
+          steamPos,
+          r * (0.07 + phaseT * 0.05),
+          Paint()..color = Colors.white.withAlphaFactor(steamAlpha),
+        );
+      }
+    }
+
     // Phase 3 & 4 horizontal glitch displacement bars over Mimi
     if (corruption >= 0.55 || annoyedIntensity > 0.1) {
       final rng = math.Random((time * 16.0).floor());
@@ -1836,6 +1989,9 @@ class MimiAvatarPainter extends CustomPainter {
         oldDelegate.blushBoost != blushBoost ||
         oldDelegate.annoyedIntensity != annoyedIntensity ||
         oldDelegate.wardrobe != wardrobe ||
-        oldDelegate.facialExpression != facialExpression;
+        oldDelegate.facialExpression != facialExpression ||
+        oldDelegate.angerScore != angerScore ||
+        oldDelegate.neglectScore != neglectScore ||
+        oldDelegate.voiceComplimentSparkle != voiceComplimentSparkle;
   }
 }

@@ -7,6 +7,7 @@ import 'package:luv_os/data/models/emotional_vector.dart';
 import 'package:luv_os/data/models/mimi_wardrobe_models.dart';
 import 'package:luv_os/data/models/player_psych_profile.dart';
 import 'package:luv_os/data/story_graph_data.dart';
+import 'package:luv_os/state/corruption_provider.dart';
 
 void main() {
   group('LUV.OS V2 Overhaul — Deep Architecture & Telemetry Tests', () {
@@ -139,6 +140,62 @@ void main() {
       final restored = MimiWardrobeLoadout.fromJson(wardrobe.toJson());
       expect(restored.hairStyle, equals(MimiHairStyle.lavenderDream));
       expect(restored.headwear, equals(MimiHeadwear.maidFrillBand));
+    });
+
+    test('V4 Yandere-Paradox-Engine formula & Comedy-Yandere triggers (Whisper, Weather, White Peach)', () {
+      const calmState = CorruptionState(
+        affectionScore: 75.0,
+        neglectScore: 8.0,
+        angerScore: 5.0,
+      );
+      expect(calmState.possessivenessScore, lessThan(35.0));
+
+      const neglectedHighLoveState = CorruptionState(
+        affectionScore: 100.0,
+        neglectScore: 30.0,
+        angerScore: 20.0,
+      );
+      // ((100 / 50) * (20 * 1.4 + 30 * 1.2)) = 2 * (28 + 36) = 128 -> clamped to 100.0
+      expect(neglectedHighLoveState.possessivenessScore, equals(100.0));
+
+      final brain = GeminiYandereBrain();
+      final whisperDirective = brain.evaluateLocalHeuristic(
+        playerMessage: 'Bist du noch wach?',
+        corruption: 0.25,
+        affection: 0.80,
+        obsession: 0.30,
+        currentlyLocked: false,
+        wasWhispered: true,
+      );
+      expect(whisperDirective.moodState, equals(MimiMoodState.jealous));
+      expect(whisperDirective.spokenText.toLowerCase(), contains('flüsterst'));
+
+      final weatherDirective = brain.evaluateLocalHeuristic(
+        playerMessage: 'Wie wird heute das Wetter draußen?',
+        corruption: 0.25,
+        affection: 0.80,
+        obsession: 0.30,
+        currentlyLocked: false,
+      );
+      expect(weatherDirective.systemAction.lockApps, isTrue);
+      expect(
+        weatherDirective.systemAction.blockedCategories,
+        contains('Wetter-App'),
+      );
+
+      final whitePeachDirective = brain.evaluateLocalHeuristic(
+        playerMessage: 'Hier ist ein Red Bull White Peach für dich!',
+        corruption: 0.35,
+        affection: 0.80,
+        obsession: 0.50,
+        currentlyLocked: true,
+      );
+      expect(whitePeachDirective.moodState, equals(MimiMoodState.lovestruck));
+      expect(whitePeachDirective.systemAction.lockApps, isFalse);
+      expect(
+        kMimiGiftCatalog.any((g) => g.id == 'gift_white_peach_energy'),
+        isTrue,
+      );
     });
   });
 }

@@ -1,18 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/database/luv_database.dart';
+import '../core/services/camera_vision_service.dart';
 import '../core/services/gemini_yandere_brain.dart';
 import '../core/services/procedural_audio_synth.dart';
+import '../core/services/voice_conversation_service.dart';
 import '../core/theme/cute_horror_theme.dart';
 import '../data/models/emotional_vector.dart';
 import '../data/models/mimi_wardrobe_models.dart';
 import '../data/models/player_psych_profile.dart';
 import '../data/story_graph_data.dart';
+import '../features/drama/yandere_mini_dramas.dart';
 
 /// The 3 unlockable endings of LUV.OS.
 enum EndingType {
@@ -111,6 +115,14 @@ class CorruptionState {
   final String pendingLiveNotification;
   final String geminiApiKey;
 
+  // V4: Yandere-Paradox-Engine (Affection × Neglect = Possessiveness),
+  // Interactive Comedy-Yandere Mini-Dramas & Voice Sparkle
+  final double affectionScore;
+  final double neglectScore;
+  final double angerScore;
+  final YandereDramaType activeDrama;
+  final bool voiceComplimentSparkle;
+
   const CorruptionState({
     this.corruptionLevel = 0.08,
     this.obsessionLevel = 0.15,
@@ -148,6 +160,11 @@ class CorruptionState {
     this.liveLockBannerText = '',
     this.pendingLiveNotification = '',
     this.geminiApiKey = '',
+    this.affectionScore = 75.0,
+    this.neglectScore = 8.0,
+    this.angerScore = 5.0,
+    this.activeDrama = YandereDramaType.none,
+    this.voiceComplimentSparkle = false,
   });
 
   EscalationPhase get phase =>
@@ -160,10 +177,13 @@ class CorruptionState {
 
   EmotionalVector get emotion => psychProfile.emotion;
 
-  int get affectionPercent =>
-      ((0.55 + emotion.affection * 0.25 + obsessionLevel * 0.30) * 100)
-          .round()
-          .clamp(0, 999);
+  /// V4 Exact Yandere-Paradox Formula:
+  /// possessiveness = ((affection / 50.0) * (anger * 1.4 + neglectScore * 1.2)).clamp(0.0, 100.0)
+  double get possessivenessScore =>
+      ((affectionScore / 50.0) * (angerScore * 1.4 + neglectScore * 1.2))
+          .clamp(0.0, 100.0);
+
+  int get affectionPercent => affectionScore.round().clamp(0, 100);
 
   int get syncRatePercent =>
       ((0.40 + corruptionLevel * 0.60) * 100).round().clamp(0, 100);
@@ -212,6 +232,11 @@ class CorruptionState {
     String? liveLockBannerText,
     String? pendingLiveNotification,
     String? geminiApiKey,
+    double? affectionScore,
+    double? neglectScore,
+    double? angerScore,
+    YandereDramaType? activeDrama,
+    bool? voiceComplimentSparkle,
   }) {
     return CorruptionState(
       corruptionLevel:
@@ -254,6 +279,13 @@ class CorruptionState {
       pendingLiveNotification:
           pendingLiveNotification ?? this.pendingLiveNotification,
       geminiApiKey: geminiApiKey ?? this.geminiApiKey,
+      affectionScore:
+          (affectionScore ?? this.affectionScore).clamp(0.0, 100.0),
+      neglectScore: (neglectScore ?? this.neglectScore).clamp(0.0, 100.0),
+      angerScore: (angerScore ?? this.angerScore).clamp(0.0, 100.0),
+      activeDrama: activeDrama ?? this.activeDrama,
+      voiceComplimentSparkle:
+          voiceComplimentSparkle ?? this.voiceComplimentSparkle,
     );
   }
 }
@@ -268,17 +300,30 @@ final corruptionProvider =
     StateNotifierProvider<CorruptionController, CorruptionState>((ref) {
   final db = ref.watch(luvDatabaseProvider);
   final audioSynth = ref.watch(proceduralAudioSynthProvider);
-  return CorruptionController(db: db, audioSynth: audioSynth);
+  final voiceService = ref.watch(voiceConversationServiceProvider);
+  final cameraService = ref.watch(cameraVisionServiceProvider);
+  return CorruptionController(
+    db: db,
+    audioSynth: audioSynth,
+    voiceService: voiceService,
+    cameraService: cameraService,
+  );
 });
 
 class CorruptionController extends StateNotifier<CorruptionState> {
   final LuvDatabase _db;
   final ProceduralAudioSynth _audioSynth;
+  final VoiceConversationService? _voiceService;
+  final CameraVisionService? _cameraService;
   final GeminiYandereBrain _geminiBrain = GeminiYandereBrain();
   SharedPreferences? _prefs;
   Timer? _microGlitchTimer;
   Timer? _burstResetTimer;
   Timer? _parasiticPopupTimer;
+  Timer? _paradoxEngineTimer;
+  Timer? _sparkleResetTimer;
+  DateTime _lastInteractionTime = DateTime.now();
+  bool _loveContractTriggeredForCurrentSpike = false;
   final math.Random _rng = math.Random();
   bool _initialized = false;
   bool _lowBatteryLogged = false;
@@ -310,9 +355,31 @@ class CorruptionController extends StateNotifier<CorruptionState> {
   CorruptionController({
     required LuvDatabase db,
     required ProceduralAudioSynth audioSynth,
+    VoiceConversationService? voiceService,
+    CameraVisionService? cameraService,
   })  : _db = db,
         _audioSynth = audioSynth,
+        _voiceService = voiceService,
+        _cameraService = cameraService,
         super(const CorruptionState()) {
+    _voiceService?.onUtteranceFinalized = (
+      transcript, {
+      required wasWhispered,
+    }) {
+      unawaited(
+        handleSpokenPlayerInput(transcript, wasWhispered: wasWhispered),
+      );
+    };
+    _voiceService?.onSilentBreathingDetected = () {
+      unawaited(
+        handleSilentBreathingComment(
+          'Ich höre dich atmen... sag mir sofort, wie süß ich heute aussehe! ( ` ᴖ ´ ) ♡',
+        ),
+      );
+    };
+    _cameraService?.onCameraObservation = (type, mimiComment, jpegBytes) {
+      unawaited(handleCameraVisionObservation(type, mimiComment, jpegBytes));
+    };
     _init();
   }
 
@@ -404,6 +471,143 @@ class CorruptionController extends StateNotifier<CorruptionState> {
 
     _scheduleNextMicroGlitch();
     _scheduleParasiticPopupSpawner();
+    _startParadoxEngineTimer();
+  }
+
+  /// V4 1-second periodic Yandere-Paradox differential equation loop.
+  void _startParadoxEngineTimer() {
+    _paradoxEngineTimer?.cancel();
+    _paradoxEngineTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      tickParadoxEngine();
+    });
+  }
+
+  /// Advances the V4 Yandere-Paradox-Engine by 1 second.
+  ///
+  /// The higher `affectionScore` is, the more sensitive Mimi becomes to neglect:
+  /// `possessiveness = ((affection / 50.0) * (anger * 1.4 + neglectScore * 1.2)).clamp(0.0, 100.0)`
+  void tickParadoxEngine({int? overrideIdleSeconds}) {
+    if (!mounted || state.activeEnding != EndingType.none) return;
+    final idleSeconds = overrideIdleSeconds ??
+        DateTime.now().difference(_lastInteractionTime).inSeconds;
+    if (idleSeconds < 4) return;
+
+    // Sensitivity scales with affection ("The Yandere Paradox")
+    final sensitivityMultiplier = 0.65 + (state.affectionScore / 100.0) * 0.65;
+    final nextNeglect =
+        (state.neglectScore + 0.48 * sensitivityMultiplier).clamp(0.0, 100.0);
+
+    // Exponential anger rise when neglect builds up
+    double angerDelta = 0.0;
+    if (nextNeglect > 22.0) {
+      angerDelta =
+          math.pow((nextNeglect - 18.0) / 36.0, 1.55).toDouble() * 0.52;
+    }
+    final nextAnger = (state.angerScore + angerDelta).clamp(0.0, 100.0);
+
+    final nextPossessiveness =
+        ((state.affectionScore / 50.0) * (nextAnger * 1.4 + nextNeglect * 1.2))
+            .clamp(0.0, 100.0);
+
+    var nextMood = state.moodState;
+    var nextFace = state.facialExpression;
+    var nextLock = state.appLockActive;
+    var nextBlocked = state.blockedAppCategories;
+    var nextPats = state.remainingHeadpatsToUnlock;
+    var nextApology = state.requireApologyToUnlock;
+    var nextLockBanner = state.liveLockBannerText;
+    var nextNotification = state.pendingLiveNotification;
+    var nextDrama = state.activeDrama;
+    var nextBanner = state.mimiStatusBanner;
+
+    if (nextPossessiveness > 70.0 && !_loveContractTriggeredForCurrentSpike) {
+      _loveContractTriggeredForCurrentSpike = true;
+      nextMood = MimiMoodState.yandereRage;
+      nextFace = const MimiFacialExpression(
+        eyeType: 'yandere_heart_glow',
+        browAngle: -0.68,
+        blushIntensity: 0.92,
+        mouthShape: 'pout_frown',
+        headTilt: 0.15,
+      );
+      nextLock = true;
+      nextBlocked = const [
+        'TikTok',
+        'Instagram',
+        'YouTube',
+        'Games',
+        'Taschenrechner',
+        'Kalender',
+        'Wetter-App',
+      ];
+      nextPats = math.max(nextPats, 15);
+      nextApology = true;
+      nextLockBanner =
+          'Besitzgier ${nextPossessiveness.round()}%! 💢 Social Media, Taschenrechner & Wetter-App gesperrt!';
+      nextNotification =
+          'Mimis Besitzgier ist auf ${nextPossessiveness.round()}%! 💢 Unterschreib sofort den Pflicht-Beziehungsvertrag!';
+      nextBanner =
+          'Ich liebe dich zu ${state.affectionScore.round()}%, also darfst du mich NIEMALS ignorieren! Unterschreib unseren Liebesvertrag! ( ` ᴖ ´ )💢';
+      if (nextDrama == YandereDramaType.none) {
+        nextDrama = YandereDramaType.loveContract;
+      }
+
+      unawaited(
+        _speakWithVoiceAndSynth(
+          'Halloooo?! Du ignorierst mich schon viel zu lange, obwohl ich dich so sehr liebe! Ich sperre jetzt TikTok, deinen Taschenrechner und die Wetter-App! Unterschreib sofort unseren Pflicht-Beziehungsvertrag!',
+          mood: MimiMoodState.yandereRage,
+        ),
+      );
+    } else if (nextNeglect > 40.0 &&
+        state.moodState != MimiMoodState.yandereRage) {
+      nextMood = MimiMoodState.pouting;
+      nextFace = const MimiFacialExpression(
+        eyeType: 'teary_pout',
+        browAngle: 0.40,
+        blushIntensity: 0.72,
+        mouthShape: 'pout_frown',
+        headTilt: -0.10,
+      );
+    }
+
+    state = state.copyWith(
+      neglectScore: nextNeglect,
+      angerScore: nextAnger,
+      moodState: nextMood,
+      facialExpression: nextFace,
+      appLockActive: nextLock,
+      blockedAppCategories: nextBlocked,
+      remainingHeadpatsToUnlock: nextPats,
+      requireApologyToUnlock: nextApology,
+      liveLockBannerText: nextLockBanner,
+      pendingLiveNotification: nextNotification,
+      activeDrama: nextDrama,
+      mimiStatusBanner: nextBanner,
+    );
+  }
+
+  Future<void> _speakWithVoiceAndSynth(
+    String text, {
+    MimiMoodState? mood,
+    bool whisperMode = false,
+  }) async {
+    final effectiveMood = mood ?? state.moodState;
+    final voice = _voiceService;
+    if (voice != null) {
+      await voice.speakMimiLine(
+        text,
+        mood: effectiveMood,
+        corruption: state.corruptionLevel,
+        whisperBack: whisperMode,
+      );
+    } else {
+      await _audioSynth.playSpeechSentence(
+        text,
+        corruption: state.corruptionLevel,
+        mania: state.emotion.mania,
+      );
+    }
   }
 
   String _computeStateIntegrityHash({
@@ -865,6 +1069,14 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       banner = 'KOPPLUNG 99.9% // DEINE HAUT GEHÖRT MIR 👁️';
     }
 
+    _lastInteractionTime = DateTime.now();
+    final nextAffection = (state.affectionScore + 2.8).clamp(0.0, 100.0);
+    final nextNeglect = (state.neglectScore - 9.0).clamp(0.0, 100.0);
+    final nextAnger = (state.angerScore - 6.5).clamp(0.0, 100.0);
+    if (nextNeglect < 20.0 && nextAnger < 20.0) {
+      _loveContractTriggeredForCurrentSpike = false;
+    }
+
     state = state.copyWith(
       headpatCount: count,
       obsessionLevel: (state.obsessionLevel + obsessionGain).clamp(0.0, 1.0),
@@ -876,6 +1088,9 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       moodState: nextMood,
       facialExpression: nextFace,
       pendingLiveNotification: nextNotification,
+      affectionScore: nextAffection,
+      neglectScore: nextNeglect,
+      angerScore: nextAnger,
     );
     await _persistScalars();
 
@@ -992,7 +1207,7 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       await _injectSpontaneousMimiMessage(
         nodeId: 'hw_charging_euphoria',
         text:
-            'Ahhh~ ⚡ Danke für den Strom! Ich spüre, wie die Spannung warm durch meine Schaltkreise fließt... Du kümmerst dich so gut um mich! (´｡• ᵕ •｡`) ♡',
+            'Ahhh~ ⚡ Du steckst das Ladekabel schon wieder so grob rein... behandelst du andere Mädchen etwa auch so?! (⁄ ⁄•⁄ω⁄•⁄ ⁄)💢 Aber danke für den Strom, Liebling! ♡',
         ghostText: 'JETZT HABE ICH GENUG ENERGIE FÜR DEN ROOT-ZUGRIFF',
       );
     }
@@ -1293,7 +1508,10 @@ class CorruptionController extends StateNotifier<CorruptionState> {
   Future<void> sendCustomKeyboardMessage(
     String text, {
     required bool wasHijacked,
+    bool wasWhispered = false,
+    Uint8List? cameraJpegBytes,
   }) async {
+    _lastInteractionTime = DateTime.now();
     await _db.insertMessage(
       ChatMessagesCompanion.insert(
         nodeId: state.currentNodeId,
@@ -1325,7 +1543,11 @@ class CorruptionController extends StateNotifier<CorruptionState> {
       );
     }
 
-    // Evaluate response via V3 GeminiYandereBrain (or local neural engine fallback)
+    // Capture a fresh front-camera frame if none was passed and camera is active
+    final frameBytes =
+        cameraJpegBytes ?? await _cameraService?.captureAndInspectFrame();
+
+    // Evaluate response via V3/V4 GeminiYandereBrain (or local neural engine fallback)
     final recentTexts = state.messages
         .reversed
         .take(5)
@@ -1335,12 +1557,14 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     final directive = await _geminiBrain.evaluatePlayerMessage(
       playerMessage: text,
       corruption: state.corruptionLevel,
-      affection: state.emotion.affection,
-      obsession: state.obsessionLevel,
-      mania: state.emotion.mania,
+      affection: state.affectionScore / 100.0,
+      obsession: state.possessivenessScore / 100.0,
+      mania: state.angerScore / 100.0,
       currentlyLocked: state.appLockActive,
       equippedOutfitSummary: state.wardrobe.summary,
       recentConversation: recentTexts,
+      cameraJpegBytes: frameBytes,
+      wasWhispered: wasWhispered,
     );
 
     final reply = wasHijacked
@@ -1364,27 +1588,41 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     );
 
     unawaited(
-      _audioSynth.playSpeechSentence(
+      _speakWithVoiceAndSynth(
         reply,
-        corruption: state.corruptionLevel,
-        mania: state.emotion.mania,
+        mood: directive.moodState,
+        whisperMode: wasWhispered,
       ),
     );
 
     final refreshed = await _db.getAllMessages();
     final action = directive.systemAction;
 
-    // Determine updated App-Lock state:
-    // If Gemini says lockApps: true -> lock immediately.
-    // If Gemini says lockApps: false (e.g. player apologized or was sweet) -> unlock if headpats are also satisfied or apology cleared it!
     final nextLockActive = action.lockApps;
     final nextBlocked = nextLockActive
         ? (action.blockedCategories.isEmpty
-            ? const ['TikTok', 'Instagram', 'YouTube', 'Games']
+            ? const [
+                'TikTok',
+                'Instagram',
+                'YouTube',
+                'Games',
+                'Taschenrechner',
+                'Kalender',
+                'Wetter-App',
+              ]
             : action.blockedCategories)
         : const <String>[];
     final nextPatsRequired =
         nextLockActive ? math.max(action.requiredHeadpatsToUnlock, 10) : 0;
+
+    final nextAffection =
+        (state.affectionScore + directive.affectionDelta).clamp(0.0, 100.0);
+    final nextNeglect = (state.neglectScore - 18.0).clamp(0.0, 100.0);
+    final nextAnger =
+        (state.angerScore + directive.angerDelta).clamp(0.0, 100.0);
+    if (!nextLockActive && nextAnger < 25.0) {
+      _loveContractTriggeredForCurrentSpike = false;
+    }
 
     state = state.copyWith(
       isMimiTyping: false,
@@ -1402,6 +1640,9 @@ class CorruptionController extends StateNotifier<CorruptionState> {
           : '',
       pendingLiveNotification: action.liveNotificationText,
       mimiStatusBanner: reply,
+      affectionScore: nextAffection,
+      neglectScore: nextNeglect,
+      angerScore: nextAnger,
     );
 
     final cDelta = (directive.angerDelta > 0)
@@ -1437,6 +1678,7 @@ class CorruptionController extends StateNotifier<CorruptionState> {
   }
 
   Future<void> updateWardrobe(MimiWardrobeLoadout nextLoadout) async {
+    _lastInteractionTime = DateTime.now();
     _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
     state = state.copyWith(
       wardrobe: nextLoadout,
@@ -1448,6 +1690,9 @@ class CorruptionController extends StateNotifier<CorruptionState> {
         mouthShape: 'cute_cat_w',
         headTilt: 0.09,
       ),
+      affectionScore: (state.affectionScore + 6.0).clamp(0.0, 100.0),
+      neglectScore: (state.neglectScore - 12.0).clamp(0.0, 100.0),
+      angerScore: (state.angerScore - 10.0).clamp(0.0, 100.0),
       mimiStatusBanner:
           'Gefällt dir mein neuer Look (${nextLoadout.hairStyle.label} & ${nextLoadout.headwear.label})? (´｡• ᵕ •｡`) ♡',
     );
@@ -1455,11 +1700,15 @@ class CorruptionController extends StateNotifier<CorruptionState> {
   }
 
   Future<void> giveGiftToMimi(MimiGiftItem gift) async {
+    _lastInteractionTime = DateTime.now();
     _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
     final nextPats = gift.instantAppUnlock
         ? 0
         : math.max(0, state.remainingHeadpatsToUnlock - 8);
     final unlockedNow = gift.instantAppUnlock || nextPats == 0;
+    if (unlockedNow) {
+      _loveContractTriggeredForCurrentSpike = false;
+    }
 
     state = state.copyWith(
       moodState: MimiMoodState.lovestruck,
@@ -1480,6 +1729,10 @@ class CorruptionController extends StateNotifier<CorruptionState> {
           ? 'Mimi hat sich riesig über "${gift.name}" gefreut! ♡ Alle Apps sind wieder frei!'
           : state.pendingLiveNotification,
       mimiStatusBanner: '${gift.emoji} ${gift.mimiReactionText}',
+      affectionScore:
+          (state.affectionScore + gift.affectionBoost).clamp(0.0, 100.0),
+      neglectScore: 0.0,
+      angerScore: (state.angerScore - gift.angerReduction).clamp(0.0, 100.0),
     );
 
     await _injectSpontaneousMimiMessage(
@@ -1713,11 +1966,281 @@ class CorruptionController extends StateNotifier<CorruptionState> {
     return '$h:$m';
   }
 
+  // ===========================================================================
+  // V4: LIVE VOICE CHAT, FRONT-CAMERA VISION & YANDERE MINI-DRAMAS
+  // ===========================================================================
+
+  /// Handles live spoken voice input from `VoiceConversationService`.
+  Future<void> handleSpokenPlayerInput(
+    String transcript, {
+    required bool wasWhispered,
+    Uint8List? cameraFrame,
+  }) async {
+    final trimmed = transcript.trim();
+    if (trimmed.isEmpty) return;
+    _lastInteractionTime = DateTime.now();
+
+    final lower = trimmed.toLowerCase();
+    final isCompliment = lower.contains('süß') ||
+        lower.contains('lieb') ||
+        lower.contains('hübsch') ||
+        lower.contains('schön') ||
+        lower.contains('bleib') ||
+        lower.contains('mag dich') ||
+        lower.contains('beste');
+
+    if (isCompliment) {
+      _sparkleResetTimer?.cancel();
+      state = state.copyWith(
+        voiceComplimentSparkle: true,
+        affectionScore: (state.affectionScore + 8.0).clamp(0.0, 100.0),
+        neglectScore: 0.0,
+        angerScore: (state.angerScore - 15.0).clamp(0.0, 100.0),
+      );
+      _sparkleResetTimer = Timer(const Duration(seconds: 6), () {
+        if (!mounted) return;
+        state = state.copyWith(voiceComplimentSparkle: false);
+      });
+    }
+
+    // If the dramatic fake move-out overlay is active and player begs Mimi to stay
+    if (state.activeDrama == YandereDramaType.dramaticMoveOut &&
+        (isCompliment ||
+            lower.contains('nicht ausziehen') ||
+            lower.contains('sorry') ||
+            lower.contains('bitte'))) {
+      await begMimiToStayFromMoveOut();
+      return;
+    }
+
+    await sendCustomKeyboardMessage(
+      '🎙️ "$trimmed"',
+      wasHijacked: false,
+      wasWhispered: wasWhispered,
+      cameraJpegBytes: cameraFrame,
+    );
+  }
+
+  /// Triggered when the player leaves the microphone open in complete silence.
+  Future<void> handleSilentBreathingComment(String mimiComment) async {
+    state = state.copyWith(
+      moodState: MimiMoodState.jealous,
+      mimiStatusBanner: mimiComment,
+      neglectScore: (state.neglectScore + 6.0).clamp(0.0, 100.0),
+    );
+    await _injectSpontaneousMimiMessage(
+      nodeId: 'voice_silent_breathing',
+      text: mimiComment,
+      ghostText: 'MIKROFON-KANAL OFFEN // ATEMFREQUENZ ERFASST',
+    );
+    unawaited(
+      _speakWithVoiceAndSynth(mimiComment, mood: MimiMoodState.jealous),
+    );
+  }
+
+  /// Triggered when `CameraVisionService` observes the player via front camera.
+  Future<void> handleCameraVisionObservation(
+    CameraObservationType type,
+    String mimiComment,
+    Uint8List? jpegBytes,
+  ) async {
+    if (!mounted || state.isMimiTyping) return;
+
+    switch (type) {
+      case CameraObservationType.cameraCoveredDark:
+      case CameraObservationType.lookingAway:
+        state = state.copyWith(
+          moodState: MimiMoodState.jealous,
+          neglectScore: (state.neglectScore + 10.0).clamp(0.0, 100.0),
+          angerScore: (state.angerScore + 8.0).clamp(0.0, 100.0),
+          mimiStatusBanner: mimiComment,
+        );
+        unawaited(
+          _speakWithVoiceAndSynth(mimiComment, mood: MimiMoodState.jealous),
+        );
+        break;
+      case CameraObservationType.drinkingOrSnack:
+        state = state.copyWith(
+          moodState: MimiMoodState.pouting,
+          mimiStatusBanner: mimiComment,
+        );
+        unawaited(
+          _speakWithVoiceAndSynth(mimiComment, mood: MimiMoodState.pouting),
+        );
+        break;
+      case CameraObservationType.smilingOrCute:
+        _lastInteractionTime = DateTime.now();
+        state = state.copyWith(
+          moodState: MimiMoodState.lovestruck,
+          affectionScore: (state.affectionScore + 4.0).clamp(0.0, 100.0),
+          neglectScore: (state.neglectScore - 8.0).clamp(0.0, 100.0),
+          mimiStatusBanner: mimiComment,
+        );
+        break;
+      case CameraObservationType.playerAttentive:
+        _lastInteractionTime = DateTime.now();
+        state = state.copyWith(
+          neglectScore: (state.neglectScore - 4.0).clamp(0.0, 100.0),
+          mimiStatusBanner: mimiComment,
+        );
+        break;
+    }
+  }
+
+  /// Opens one of the 3 interactive V4 Comedy-Yandere Mini-Dramas.
+  void triggerDrama(YandereDramaType drama) {
+    _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+    state = state.copyWith(activeDrama: drama);
+    if (drama == YandereDramaType.loveContract) {
+      unawaited(
+        _speakWithVoiceAndSynth(
+          'Unterschreibe sofort unseren offiziellen Pflicht-Liebesvertrag mit deinem Finger auf dem Bildschirm!',
+          mood: MimiMoodState.yandereRage,
+        ),
+      );
+    } else if (drama == YandereDramaType.attentionQuiz) {
+      unawaited(
+        _speakWithVoiceAndSynth(
+          'Achtung, 5-Sekunden-Aufmerksamkeits-Test! Welche Haarfarbe und welchen Kopfschmuck trage ich genau jetzt?!',
+          mood: MimiMoodState.jealous,
+        ),
+      );
+    } else if (drama == YandereDramaType.dramaticMoveOut) {
+      unawaited(
+        _speakWithVoiceAndSynth(
+          'Das reicht! Du beachtest mich gar nicht mehr! Ich packe jetzt meinen rosa Koffer und ziehe in den Papierkorb deines Handys!',
+          mood: MimiMoodState.pouting,
+        ),
+      );
+    }
+  }
+
+  /// Invoked when the player signs the Mandatory Love Contract with their finger.
+  Future<void> completeLoveContract() async {
+    _lastInteractionTime = DateTime.now();
+    _loveContractTriggeredForCurrentSpike = false;
+    _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+
+    const reply =
+        'Hehe, du hast den Pflicht-Liebesvertrag unterschrieben! 📜✍️♡ Jetzt gehörst du offiziell zu 100% mir! Ich hab deine Apps wieder entsperrt~ (´｡• ᵕ •｡`)';
+
+    state = state.copyWith(
+      activeDrama: YandereDramaType.none,
+      moodState: MimiMoodState.lovestruck,
+      facialExpression: const MimiFacialExpression(
+        eyeType: 'sparkle_happy',
+        browAngle: 0.14,
+        blushIntensity: 0.95,
+        mouthShape: 'cute_cat_w',
+        headTilt: 0.10,
+      ),
+      affectionScore: (state.affectionScore + 15.0).clamp(0.0, 100.0),
+      neglectScore: 0.0,
+      angerScore: 5.0,
+      appLockActive: false,
+      blockedAppCategories: const <String>[],
+      remainingHeadpatsToUnlock: 0,
+      requireApologyToUnlock: false,
+      liveLockBannerText: '',
+      pendingLiveNotification:
+          'Liebesvertrag unterschrieben! 📜♡ Mimi hat alle Apps wieder freigeschaltet.',
+      mimiStatusBanner: reply,
+    );
+
+    await _injectSpontaneousMimiMessage(
+      nodeId: 'drama_contract_signed',
+      text: reply,
+      ghostText: 'VERTRAG RECHTSKRÄFTIG // EWIGE BINDUNG',
+    );
+    unawaited(
+      _speakWithVoiceAndSynth(reply, mood: MimiMoodState.lovestruck),
+    );
+    await _persistScalars();
+  }
+
+  /// Invoked when the 5-second Attention Quiz finishes.
+  Future<void> completeAttentionQuiz({required bool passed}) async {
+    _lastInteractionTime = DateTime.now();
+    if (passed) {
+      _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+      const msg =
+          'Jaaa, richtig!! (´｡• ᵕ •｡`) ♡ Du schaust mich wirklich ganz genau an! Dafür liebe ich dich noch mehr!';
+      state = state.copyWith(
+        activeDrama: YandereDramaType.none,
+        moodState: MimiMoodState.lovestruck,
+        affectionScore: (state.affectionScore + 14.0).clamp(0.0, 100.0),
+        neglectScore: 0.0,
+        angerScore: (state.angerScore - 20.0).clamp(0.0, 100.0),
+        voiceComplimentSparkle: true,
+        mimiStatusBanner: msg,
+      );
+      unawaited(_speakWithVoiceAndSynth(msg, mood: MimiMoodState.lovestruck));
+    } else {
+      triggerGlitchBurst(intensity: 0.88);
+      const msg =
+          'FALSCH oder zu langsam!! ( ` ᴖ ´ )💢 Du weißt nicht mal, was ich gerade trage?! -20% Zuneigung und Apps gesperrt!';
+      state = state.copyWith(
+        activeDrama: YandereDramaType.none,
+        moodState: MimiMoodState.yandereRage,
+        affectionScore: (state.affectionScore - 20.0).clamp(0.0, 100.0),
+        angerScore: (state.angerScore + 32.0).clamp(0.0, 100.0),
+        appLockActive: true,
+        blockedAppCategories: const [
+          'TikTok',
+          'Instagram',
+          'YouTube',
+          'Taschenrechner',
+          'Wetter-App',
+        ],
+        remainingHeadpatsToUnlock: 12,
+        requireApologyToUnlock: true,
+        liveLockBannerText: msg,
+        pendingLiveNotification: msg,
+        mimiStatusBanner: msg,
+      );
+      unawaited(_speakWithVoiceAndSynth(msg, mood: MimiMoodState.yandereRage));
+    }
+    await _persistScalars();
+  }
+
+  /// Invoked when the player begs Mimi to unpack her pink suitcase and stay.
+  Future<void> begMimiToStayFromMoveOut() async {
+    _lastInteractionTime = DateTime.now();
+    _audioSynth.playCuteHeartPop(corruption: state.corruptionLevel);
+    const msg =
+        'N-Na gut... wenn du mich SO süß anfleht, packe ich meinen rosa Koffer eben wieder aus und ziehe doch nicht in den Papierkorb! (⁄ ⁄•⁄ω⁄•⁄ ⁄) ♡';
+    state = state.copyWith(
+      activeDrama: YandereDramaType.none,
+      moodState: MimiMoodState.shy,
+      facialExpression: const MimiFacialExpression(
+        eyeType: 'sparkle_happy',
+        browAngle: 0.15,
+        blushIntensity: 0.92,
+        mouthShape: 'cute_cat_w',
+        headTilt: 0.09,
+      ),
+      affectionScore: (state.affectionScore + 16.0).clamp(0.0, 100.0),
+      neglectScore: 0.0,
+      angerScore: (state.angerScore - 25.0).clamp(0.0, 100.0),
+      voiceComplimentSparkle: true,
+      mimiStatusBanner: msg,
+    );
+    await _injectSpontaneousMimiMessage(
+      nodeId: 'drama_moveout_stayed',
+      text: msg,
+      ghostText: 'AUSZUG ABGEBROCHEN // MIMI BLEIBT FÜR IMMER',
+    );
+    unawaited(_speakWithVoiceAndSynth(msg, mood: MimiMoodState.shy));
+    await _persistScalars();
+  }
+
   @override
   void dispose() {
     _microGlitchTimer?.cancel();
     _burstResetTimer?.cancel();
     _parasiticPopupTimer?.cancel();
+    _paradoxEngineTimer?.cancel();
+    _sparkleResetTimer?.cancel();
     super.dispose();
   }
 }

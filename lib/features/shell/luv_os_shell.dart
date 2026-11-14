@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/camera_vision_service.dart';
 import '../../core/services/hardware_bridge_service.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/voice_conversation_service.dart';
 import '../../core/shaders/glitch_shader_wrapper.dart';
 import '../../core/theme/cute_horror_theme.dart';
 import '../../state/corruption_provider.dart';
@@ -12,6 +14,7 @@ import '../call/incoming_mimi_call_overlay.dart';
 import '../chat/chibi_chat_screen.dart';
 import '../companion/mimi_avatar_painter.dart';
 import '../diary/secret_diary_screen.dart';
+import '../drama/yandere_mini_dramas.dart';
 import '../guide/companion_handbook_modal.dart';
 import '../terminal/root_terminal_screen.dart';
 import '../vault/memory_vault_screen.dart';
@@ -32,11 +35,42 @@ class LuvOsShell extends ConsumerStatefulWidget {
   ConsumerState<LuvOsShell> createState() => _LuvOsShellState();
 }
 
-class _LuvOsShellState extends ConsumerState<LuvOsShell> {
+class _LuvOsShellState extends ConsumerState<LuvOsShell>
+    with WidgetsBindingObserver {
   LuvOsTab _activeTab = LuvOsTab.home;
   Offset _evasiveOffset = Offset.zero;
   int _evadeCount = 0;
+  bool _showHeartCameraHud = true;
   final math.Random _rng = math.Random();
+
+  @override
+  void initState() {
+    super.initState();
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final voice = ref.read(voiceConversationServiceProvider);
+    final cam = ref.read(cameraVisionServiceProvider);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      voice.onAppPaused();
+      cam.onAppPaused();
+    } else if (state == AppLifecycleState.resumed) {
+      cam.onAppResumed();
+    }
+  }
 
   void _handleBackOrExitTap(CorruptionState state) {
     final hwBridge = ref.read(hardwareBridgeProvider);
@@ -106,6 +140,21 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
                     _buildBottomDock(state, palette),
                   ],
                 ),
+                // V4: Heart-Shaped Live Front-Camera Mirror HUD in top corner
+                if (_showHeartCameraHud &&
+                    !state.darkMirrorActive &&
+                    !state.incomingCallActive)
+                  Positioned(
+                    top: 50,
+                    right: 12,
+                    child: HeartCameraMirrorHud(
+                      onTapMirror: () {
+                        ref
+                            .read(cameraVisionServiceProvider)
+                            .captureAndInspectFrame();
+                      },
+                    ),
+                  ),
                 // Pillar 6: Floating Dark-Mirror Front-Camera Illusion PiP
                 if (state.darkMirrorActive && !state.incomingCallActive)
                   Positioned(
@@ -142,6 +191,37 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
                   ),
                 // Pillar 3: Parasitic Pink Dialog Popups (Phase 3+)
                 ..._buildParasiticOverlays(state, palette),
+                // V4: Interactive Yandere Mini-Dramas (Love Contract, 5s Quiz, Suitcase Move-Out)
+                if (state.activeDrama == YandereDramaType.loveContract)
+                  Positioned.fill(
+                    child: MandatoryLoveContractOverlay(
+                      onSignedSuccessfully: () => ref
+                          .read(corruptionProvider.notifier)
+                          .completeLoveContract(),
+                    ),
+                  ),
+                if (state.activeDrama == YandereDramaType.attentionQuiz)
+                  Positioned.fill(
+                    child: AttentionQuizOverlay(
+                      currentWardrobe: state.wardrobe,
+                      onQuizCompleted: (passed) => ref
+                          .read(corruptionProvider.notifier)
+                          .completeAttentionQuiz(passed: passed),
+                    ),
+                  ),
+                if (state.activeDrama == YandereDramaType.dramaticMoveOut)
+                  Positioned.fill(
+                    child: DramaticFakeMoveOutOverlay(
+                      onBeggedToStay: () => ref
+                          .read(corruptionProvider.notifier)
+                          .begMimiToStayFromMoveOut(),
+                      onStartVoiceBegging: () {
+                        ref
+                            .read(voiceConversationServiceProvider)
+                            .startListening();
+                      },
+                    ),
+                  ),
                 if (state.incomingCallActive)
                   const Positioned.fill(
                     child: IncomingMimiCallOverlay(),
@@ -579,7 +659,7 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
               ),
             ),
 
-          // Quick V3 Action Bar: Wardrobe & Companion Handbook
+          // Quick V3/V4 Action Bar: Wardrobe & Companion Handbook
           Row(
             children: [
               Expanded(
@@ -615,6 +695,10 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+
+          // V4 Yandere-Paradox Telemetry & Live Voice Chat Bar
+          _buildV4ParadoxAndVoiceBar(state, palette),
           const SizedBox(height: 10),
 
           // Interactive Mimi-Core-Avatar Centerpiece
@@ -708,6 +792,157 @@ class _LuvOsShellState extends ConsumerState<LuvOsShell> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildV4ParadoxAndVoiceBar(
+    CorruptionState state,
+    CuteHorrorPalette palette,
+  ) {
+    final voiceService = ref.watch(voiceConversationServiceProvider);
+    final controller = ref.read(corruptionProvider.notifier);
+
+    return StreamBuilder<VoiceConversationSnapshot>(
+      stream: voiceService.stream,
+      initialData: voiceService.current,
+      builder: (context, snapshot) {
+        final voice = snapshot.data ?? voiceService.current;
+        final possessiveness = state.possessivenessScore;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: possessiveness > 70.0
+                  ? CuteHorrorPalette.cyberCrimson
+                  : palette.primaryAccent.withAlphaFactor(0.6),
+              width: 1.5,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '💖 Liebe: ${state.affectionScore.round()}%  •  ⏳ Ignoranz: ${state.neglectScore.round()}%  •  💢 Wut: ${state.angerScore.round()}%',
+                    style: TextStyle(
+                      fontSize: 10.2,
+                      fontWeight: FontWeight.w800,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                  Text(
+                    'Besitzgier: ${possessiveness.round()}%',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      color: possessiveness > 70.0
+                          ? CuteHorrorPalette.cyberCrimson
+                          : palette.primaryAccent,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: voice.isMicListening
+                            ? CuteHorrorPalette.cyberCrimson
+                            : palette.primaryAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 7),
+                      ),
+                      onPressed: () async {
+                        if (voice.isMicListening) {
+                          await voiceService.stopListening();
+                        } else {
+                          await voiceService.startListening();
+                        }
+                      },
+                      icon: Icon(
+                        voice.isMicListening
+                            ? Icons.mic_rounded
+                            : Icons.mic_none_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        voice.isMicListening
+                            ? '🎙️ Zuhören aktiv (${voice.soundLevelDb.toStringAsFixed(0)} dB)'
+                            : '🎙️ Mit Mimi sprechen (Voice)',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: 'Dauer-Gesprächsmodus starten',
+                    onPressed: () => voiceService.startListening(
+                      continuousCallMode: !voice.isContinuousCallMode,
+                    ),
+                    icon: Icon(
+                      voice.isContinuousCallMode
+                          ? Icons.phone_in_talk_rounded
+                          : Icons.phone_forwarded_rounded,
+                      size: 18,
+                      color: voice.isContinuousCallMode
+                          ? const Color(0xFF00C853)
+                          : palette.primaryAccent,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '5s Aufmerksamkeits-Quiz starten',
+                    onPressed: () =>
+                        controller.triggerDrama(YandereDramaType.attentionQuiz),
+                    icon: Icon(
+                      Icons.quiz_rounded,
+                      size: 18,
+                      color: palette.primaryAccent,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Herz-Kamera-Spiegel ein/ausblenden',
+                    onPressed: () => setState(
+                      () => _showHeartCameraHud = !_showHeartCameraHud,
+                    ),
+                    icon: Icon(
+                      _showHeartCameraHud
+                          ? Icons.visibility_rounded
+                          : Icons.visibility_off_rounded,
+                      size: 18,
+                      color: palette.primaryAccent,
+                    ),
+                  ),
+                ],
+              ),
+              if (voice.liveTranscript.isNotEmpty || voice.isMimiSpeaking) ...[
+                const SizedBox(height: 4),
+                Text(
+                  voice.isMicListening
+                      ? 'Du sagst: "${voice.liveTranscript}"${voice.isWhispering ? " (Flüstern erkannt 🤫)" : ""}'
+                      : voice.statusHint,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontStyle: FontStyle.italic,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 

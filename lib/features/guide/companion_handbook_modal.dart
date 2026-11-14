@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/services/hardware_bridge_service.dart';
 import '../../core/theme/cute_horror_theme.dart';
 import '../../state/corruption_provider.dart';
+import 'luv_os_manual_screen.dart';
 
 /// Interactive V3 Companion Handbook & Gemini AI / Native App-Locker Setup Modal.
 class CompanionHandbookModal extends ConsumerStatefulWidget {
@@ -71,7 +72,7 @@ class _CompanionHandbookModalState
             child: Row(
               children: [
                 Text(
-                  '📖 LUV.OS V3 // HANDBUCH & KI-ZENTRALE',
+                  '📖 LUV.OS V4 // HANDBUCH, VOICE & KI-ZENTRALE',
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: 13.5,
@@ -302,41 +303,7 @@ class _CompanionHandbookModalState
   }
 
   Widget _buildHandbookTab(CuteHorrorPalette palette) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      children: [
-        _buildCard(
-          palette: palette,
-          title: '🌸 Wie funktioniert Mimis Stimmungs-System?',
-          child: Text(
-            '• Im ChibiChat kannst du unten über "Freitext / KI-Chat" völlig frei mit Mimi schreiben.\n'
-            '• Machst du ihr Komplimente ("Ich hab dich lieb", "Du bist süß"), wird sie verliebt (Lovestruck ♡) und schaltet alle gesperrten Apps sofort frei.\n'
-            '• Schreibst du über "TikTok", "Instagram" oder bist abweisend ("Nerv nicht"), wechselt Mimi in "Yandere-Wut 💢" und sperrt TikTok & Social Apps!',
-            style: TextStyle(color: palette.textPrimary, fontSize: 12, height: 1.4),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _buildCard(
-          palette: palette,
-          title: '✨ Wie entsperre ich TikTok & Apps wieder?',
-          child: Text(
-            '1. Streichle Mimis Kopf auf dem Home-Screen (Finger sanft über ihren Kopf bewegen), bis der Counter auf 0 steht.\n'
-            '2. Entschuldige dich im ChibiChat bei ihr ("Tut mir leid, ich hab dich lieb ♡").\n'
-            '3. Oder öffne den Kleiderschrank (🎀) und schenke ihr den handgeschriebenen Liebesbrief 💌!',
-            style: TextStyle(color: palette.textPrimary, fontSize: 12, height: 1.4),
-          ),
-        ),
-        const SizedBox(height: 10),
-        _buildCard(
-          palette: palette,
-          title: '👗 Anime Head 3.0 & Kleiderschrank',
-          child: Text(
-            'Über den Button "Kleiderschrank 🎀" auf dem Home-Screen kannst du Mimis Haarfarbe, Kopfbedeckung (Maid-Haube, Neko-Ohren, Dämonenhörner, Engels-Halo, Krankenschwester-Hütchen), Herz-Brille und Kragen in Echtzeit anpassen.',
-            style: TextStyle(color: palette.textPrimary, fontSize: 12, height: 1.4),
-          ),
-        ),
-      ],
-    );
+    return const LuvOsManualScreen();
   }
 
   Widget _buildSecretsTab(CorruptionState state, CuteHorrorPalette palette) {

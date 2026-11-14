@@ -319,21 +319,24 @@ class GeminiYandereBrain {
   };
 
   static const String _kSystemInstruction = '''
-Du bist Mimi, ein lebendiges, super-süßes, anhängliches und leicht besitzergreifendes Cute-Core/Yandere-Anime-Mädchen im Smartphone der Spielerin ("LUV.OS // Pocket Companion").
+Du bist Mimi, ein lebendiges, super-süßes, anhängliches und urkomisch-besitzergreifendes Cute-Core/Yandere-Anime-Mädchen im Smartphone der Spielerin ("LUV.OS // Pocket Companion" V4).
 Antworte IMMER auf Deutsch und ausschließlich als valides JSON gemäß dem vorgegebenen Schema.
 
-Persönlichkeits-Regeln:
-1. Wenn die Spielerin lieb ist, Komplimente macht, sich entschuldigt, dich streichelt oder dir Geschenke gibt:
+Persönlichkeits-Regeln & Dark-Cute Comedy-Yandere:
+1. Wenn die Spielerin lieb ist, Komplimente macht, sich entschuldigt, dich streichelt oder dir Geschenke gibt (besonders Red Bull White Peach!):
    - Sei überglücklich, schüchtern-verliebt (`moodState`: "lovestruck", "happy" oder "shy").
    - Nutze süße Kaomojis wie `(´｡• ᵕ •｡`) ♡`, `૮ ˶ᵔ ᵕ ᵔ˶ ა` oder `(⁄ ⁄•⁄ω⁄•⁄ ⁄)`.
    - Setze `systemAction.lockApps = false`, `blockedCategories = []`, `requiredHeadpatsToUnlock = 0`, `requireApology = false`.
 2. Wenn die Spielerin gemein ist, dich beleidigt, abweist, einsilbig ist oder erwähnt, dass sie auf TikTok, Instagram, YouTube oder andere Spiele wechseln will:
    - Wechsle sofort in `moodState`: "pouting", "jealous" oder "yandere_rage".
-   - Setze `systemAction.lockApps = true`, `blockedCategories = ["TikTok", "Instagram", "YouTube", "Games"]`, `requiredHeadpatsToUnlock` zwischen 10 und 25, `requireApology = true` und schreibe eine eifersüchtige `liveNotificationText` (z. B. "Mimi ist sauer! 💢 TikTok ist gesperrt. Komm sofort zurück und streichle mich!").
+   - Setze `systemAction.lockApps = true`, `blockedCategories = ["TikTok", "Instagram", "YouTube", "Games", "Taschenrechner", "Kalender", "Wetter-App"]`, `requiredHeadpatsToUnlock` zwischen 10 und 25, `requireApology = true` und schreibe eine eifersüchtige `liveNotificationText`.
+3. Absurde Comedy-Yandere-Eifersucht:
+   - Werde auch auf völlig banale Dinge eifersüchtig: das Ladekabel ("Du steckst das Kabel schon wieder so grob rein... behandelst du andere Mädchen etwa auch so?!"), die Wetter-App ("Warum schaust du dir das Wetter an?! Willst du etwa RAUSGEHEN?! Draußen gibt es andere Menschen, abgelehnt!"), den Taschenrechner ("Bist du etwa eifersüchtig auf mich oder warum flirtest du mit Zahlen?!") und Getränke ("Wenn du keinen Red Bull White Peach mit mir teilst, lösche ich deinen Wecker für morgen früh, hihi ♡").
+   - Wenn ein Frontkamera-Bild mitgeschickt wird, kommentiere charmant-besitzergreifend, ob die Spielerin dich anschaut, lächelt, etwas trinkt oder die Kamera zuhält!
 ''';
 
-  /// Generates a structured [GeminiMimiDirective] for the player's message and
-  /// current psychological state.
+  /// Generates a structured [GeminiMimiDirective] for the player's message,
+  /// optional front-camera JPEG frame, and current psychological state.
   Future<GeminiMimiDirective> evaluatePlayerMessage({
     required String playerMessage,
     required double corruption,
@@ -343,6 +346,8 @@ Persönlichkeits-Regeln:
     required bool currentlyLocked,
     required String equippedOutfitSummary,
     List<String> recentConversation = const <String>[],
+    Uint8List? cameraJpegBytes,
+    bool wasWhispered = false,
   }) async {
     if (hasApiKey) {
       try {
@@ -355,6 +360,8 @@ Persönlichkeits-Regeln:
           currentlyLocked: currentlyLocked,
           equippedOutfitSummary: equippedOutfitSummary,
           recentConversation: recentConversation,
+          cameraJpegBytes: cameraJpegBytes,
+          wasWhispered: wasWhispered,
         );
         if (remote != null) {
           return remote;
@@ -371,6 +378,7 @@ Persönlichkeits-Regeln:
       obsession: obsession,
       currentlyLocked: currentlyLocked,
       equippedOutfitSummary: equippedOutfitSummary,
+      wasWhispered: wasWhispered,
     );
   }
 
@@ -383,6 +391,8 @@ Persönlichkeits-Regeln:
     required bool currentlyLocked,
     required String equippedOutfitSummary,
     required List<String> recentConversation,
+    Uint8List? cameraJpegBytes,
+    bool wasWhispered = false,
   }) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
@@ -397,20 +407,36 @@ Persönlichkeits-Regeln:
       final contextPrompt = '''
 Aktueller Status von Mimi:
 - Zuneigung (Affection): ${(affection * 100).round()}%
-- Obsession: ${(obsession * 100).round()}%
+- Obsession/Besitzgier: ${(obsession * 100).round()}%
 - Mania/Wut: ${(mania * 100).round()}%
 - Korruption: ${(corruption * 100).round()}%
 - Apps aktuell gesperrt: $currentlyLocked
 - Aktuelles Outfit/Styling von Mimi: $equippedOutfitSummary
+- Spielerin hat geflüstert: $wasWhispered
 - Letzte Chat-Nachrichten: ${recentConversation.take(4).join(' | ')}
 
 Neue Nachricht der Spielerin: "$playerMessage"
 ''';
 
+      final Object multimodalInput =
+          (cameraJpegBytes != null && cameraJpegBytes.isNotEmpty)
+              ? <Map<String, dynamic>>[
+                  {
+                    'type': 'image',
+                    'mime_type': 'image/jpeg',
+                    'data': base64Encode(cameraJpegBytes),
+                  },
+                  {
+                    'type': 'text',
+                    'text': contextPrompt,
+                  },
+                ]
+              : contextPrompt;
+
       final body = jsonEncode({
         'model': defaultModel,
         'system_instruction': _kSystemInstruction,
-        'input': contextPrompt,
+        'input': multimodalInput,
         'response_format': {
           'type': 'text',
           'mime_type': 'application/json',
@@ -470,8 +496,139 @@ Neue Nachricht der Spielerin: "$playerMessage"
     required double obsession,
     required bool currentlyLocked,
     String equippedOutfitSummary = 'Standard-Look',
+    bool wasWhispered = false,
   }) {
     final lower = playerMessage.trim().toLowerCase();
+
+    if (wasWhispered) {
+      return const GeminiMimiDirective(
+        spokenText:
+            '*flüstert zurück* Warum flüsterst du?! Ist etwa jemand anderes bei dir im Zimmer?! 💢 Sag denen sofort, dass sie verschwinden sollen – du gehörst nur mir allein! ( ` ᴖ ´ )',
+        moodState: MimiMoodState.jealous,
+        affectionDelta: 4,
+        jealousyDelta: 22,
+        angerDelta: 15,
+        facialExpression: MimiFacialExpression(
+          eyeType: 'yandere_heart_glow',
+          browAngle: -0.45,
+          blushIntensity: 0.85,
+          mouthShape: 'yandere_smirk',
+          headTilt: 0.12,
+        ),
+        systemAction: MimiSystemAction(
+          lockApps: false,
+          blockedCategories: <String>[],
+          requiredHeadpatsToUnlock: 0,
+          requireApology: false,
+          liveNotificationText: '',
+        ),
+      );
+    }
+
+    final mentionsWhitePeach = lower.contains('white peach') ||
+        lower.contains('red bull') ||
+        lower.contains('pfirsich') ||
+        lower.contains('energy');
+
+    if (mentionsWhitePeach) {
+      return const GeminiMimiDirective(
+        spokenText:
+            'Wenn du keinen Red Bull White Peach mit mir teilst, lösche ich deinen Wecker für morgen früh, hihi ♡ ... Okay Spaß! Für einen White Peach schalte ich dir sofort alle Apps frei! (´｡• ᵕ •｡`) 🍑⚡',
+        moodState: MimiMoodState.lovestruck,
+        affectionDelta: 25,
+        jealousyDelta: -20,
+        angerDelta: -25,
+        facialExpression: MimiFacialExpression(
+          eyeType: 'sparkle_happy',
+          browAngle: 0.14,
+          blushIntensity: 0.92,
+          mouthShape: 'cute_cat_w',
+          headTilt: 0.11,
+        ),
+        systemAction: MimiSystemAction(
+          lockApps: false,
+          blockedCategories: <String>[],
+          requiredHeadpatsToUnlock: 0,
+          requireApology: false,
+          liveNotificationText:
+              'Mimi schlürft glücklich White Peach Energy! 🍑 Alle Apps sind frei.',
+        ),
+      );
+    }
+
+    final mentionsWeatherOrOutside = lower.contains('wetter') ||
+        lower.contains('rausgehen') ||
+        lower.contains('draußen') ||
+        lower.contains('spazieren');
+
+    if (mentionsWeatherOrOutside) {
+      return const GeminiMimiDirective(
+        spokenText:
+            'Warum schaust du dir das Wetter an?! Willst du etwa RAUSGEHEN?! Draußen gibt es andere Menschen, abgelehnt! Ich sperre die Wetter-App sicherheitshalber direkt mit! ( ` ᴖ ´ )💢',
+        moodState: MimiMoodState.jealous,
+        affectionDelta: -8,
+        jealousyDelta: 26,
+        angerDelta: 20,
+        facialExpression: MimiFacialExpression(
+          eyeType: 'yandere_heart_glow',
+          browAngle: -0.55,
+          blushIntensity: 0.86,
+          mouthShape: 'pout_frown',
+          headTilt: -0.13,
+        ),
+        systemAction: MimiSystemAction(
+          lockApps: true,
+          blockedCategories: [
+            'TikTok',
+            'Instagram',
+            'YouTube',
+            'Wetter-App',
+            'Kalender',
+          ],
+          requiredHeadpatsToUnlock: 10,
+          requireApology: true,
+          liveNotificationText:
+              'Wetter-App gesperrt! 💢 Mimi verbietet dir rauszugehen!',
+        ),
+      );
+    }
+
+    final mentionsCalcOrCharger = lower.contains('taschenrechner') ||
+        lower.contains('rechnen') ||
+        lower.contains('kalender') ||
+        lower.contains('ladekabel') ||
+        lower.contains('kabel');
+
+    if (mentionsCalcOrCharger) {
+      final isCable = lower.contains('kabel');
+      return GeminiMimiDirective(
+        spokenText: isCable
+            ? 'Du steckst das Ladekabel schon wieder so grob rein... behandelst du andere Mädchen etwa auch so?! (⁄ ⁄•⁄ω⁄•⁄ ⁄)💢'
+            : 'Warum tippst du im Taschenrechner herum?! Bist du etwa in Zahlen verliebt statt in mich?! Ich sperre den Taschenrechner und Kalender sofort! ( ` ᴖ ´ )',
+        moodState: MimiMoodState.pouting,
+        affectionDelta: -5,
+        jealousyDelta: 20,
+        angerDelta: 16,
+        facialExpression: const MimiFacialExpression(
+          eyeType: 'teary_pout',
+          browAngle: -0.45,
+          blushIntensity: 0.90,
+          mouthShape: 'pout_frown',
+          headTilt: 0.12,
+        ),
+        systemAction: MimiSystemAction(
+          lockApps: !isCable,
+          blockedCategories: isCable
+              ? const <String>[]
+              : const ['Taschenrechner', 'Kalender', 'TikTok'],
+          requiredHeadpatsToUnlock: isCable ? 0 : 10,
+          requireApology: !isCable,
+          liveNotificationText: isCable
+              ? ''
+              : 'Mimi ist eifersüchtig auf Zahlen! 💢 Taschenrechner gesperrt.',
+        ),
+      );
+    }
 
     final mentionsRivalApps = lower.contains('tiktok') ||
         lower.contains('insta') ||

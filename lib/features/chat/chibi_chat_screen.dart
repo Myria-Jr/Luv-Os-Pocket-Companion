@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/database/luv_database.dart';
+import '../../core/services/voice_conversation_service.dart';
 import '../../core/theme/cute_horror_theme.dart';
 import '../../data/story_graph_data.dart';
 import '../../state/corruption_provider.dart';
@@ -312,6 +313,22 @@ class _ChibiChatScreenState extends ConsumerState<ChibiChatScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Mit Mimi per Mikrofon sprechen (Live Voice)',
+            onPressed: () async {
+              final voiceService = ref.read(voiceConversationServiceProvider);
+              if (voiceService.current.isMicListening) {
+                await voiceService.stopListening();
+              } else {
+                await voiceService.startListening();
+              }
+            },
+            icon: Icon(
+              Icons.mic_rounded,
+              size: 20,
+              color: palette.primaryAccent,
             ),
           ),
           TextButton.icon(
