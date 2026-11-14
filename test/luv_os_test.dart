@@ -1,0 +1,105 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:luv_os/core/database/luv_database.dart';
+import 'package:luv_os/core/services/procedural_audio_synth.dart';
+import 'package:luv_os/core/theme/cute_horror_theme.dart';
+import 'package:luv_os/data/models/emotional_vector.dart';
+import 'package:luv_os/data/models/player_psych_profile.dart';
+import 'package:luv_os/data/story_graph_data.dart';
+
+void main() {
+  group('LUV.OS V2 Overhaul — Deep Architecture & Telemetry Tests', () {
+    test('kStoryGraph contains at least 40 interconnected AdvancedStoryNodes with valid targets', () {
+      expect(kStoryGraph.length, greaterThanOrEqualTo(40));
+      expect(kStoryGraph.containsKey('node_01_welcome'), isTrue);
+
+      for (final entry in kStoryGraph.entries) {
+        final node = entry.value;
+        expect(node.id, equals(entry.key));
+        expect(node.mimiMessages, isNotEmpty);
+        expect(node.choices, isNotEmpty);
+
+        for (final choice in node.choices) {
+          expect(
+            kStoryGraph.containsKey(choice.targetNodeId),
+            isTrue,
+            reason:
+                'Node ${node.id} has choice pointing to missing target ${choice.targetNodeId}',
+          );
+        }
+      }
+    });
+
+    test('5D EmotionalVector & PlayerPsychProfile compute nervousness and yanderePressure', () {
+      const initial = EmotionalVector.initial;
+      expect(initial.affection, greaterThan(0.5));
+      expect(initial.yanderePressure, lessThan(0.5));
+
+      final escalated = initial.applyDelta(
+        const EmotionalVector(
+          obsession: 0.75,
+          mania: 0.80,
+          paranoia: 0.70,
+          trust: -0.60,
+        ),
+      );
+      expect(escalated.yanderePressure, greaterThan(0.65));
+
+      final profile = PlayerPsychProfile.initial.copyWith(
+        avgHesitationMs: 9500,
+        totalBackspaces: 48,
+        panicTapRate: 6.5,
+        silenceCount: 3,
+        emotion: escalated,
+      );
+      expect(profile.nervousness, greaterThan(0.45));
+    });
+
+    test('ProceduralAudioSynth generates valid RIFF/WAVE PCM16 byte streams in RAM', () {
+      final synth = ProceduralAudioSynth()..setMuted(true);
+      final wavBytes = synth.synthesizeCharacterBleep(
+        'A',
+        corruption: 0.35,
+        mania: 0.25,
+      );
+
+      // Verify RIFF header ('RIFF' and 'WAVE')
+      expect(wavBytes.length, greaterThan(44));
+      expect(String.fromCharCodes(wavBytes.sublist(0, 4)), equals('RIFF'));
+      expect(String.fromCharCodes(wavBytes.sublist(8, 12)), equals('WAVE'));
+      expect(synth.classifyVowelShape('a'), equals(MimiVowelShape.vowelA));
+      expect(synth.classifyVowelShape('o'), equals(MimiVowelShape.vowelO));
+      synth.dispose();
+    });
+
+    test('LuvDatabase computes deterministic FNV-1a mutation signatures', () {
+      final sig1 = LuvDatabase.computeMutationSignature(
+        eventCode: 'KEY_DECRYPTED',
+        details: 'KEY_ALPHA_ROSE',
+        timestampMs: 1700000000000,
+      );
+      final sig2 = LuvDatabase.computeMutationSignature(
+        eventCode: 'KEY_DECRYPTED',
+        details: 'KEY_ALPHA_ROSE',
+        timestampMs: 1700000000000,
+      );
+      expect(sig1, equals(sig2));
+      expect(sig1.length, greaterThanOrEqualTo(12));
+    });
+
+    test('CuteHorrorPalette disables Material 3 and interpolates radius & colors', () {
+      final phase1Palette = CuteHorrorPalette.fromCorruption(
+        corruption: 0.05,
+        obsession: 0.1,
+      );
+      final phase4Palette = CuteHorrorPalette.fromCorruption(
+        corruption: 0.95,
+        obsession: 0.9,
+      );
+
+      expect(phase1Palette.toThemeData().useMaterial3, isFalse);
+      expect(phase4Palette.toThemeData().useMaterial3, isFalse);
+      expect(phase1Palette.borderRadius, equals(24.0));
+      expect(phase4Palette.borderRadius, lessThan(10.0));
+    });
+  });
+}
